@@ -40,7 +40,9 @@ public:
 protected:
     virtual void OnResize();
     virtual void Update(const GameTimer& gt) = 0;
+    virtual void DrawBegin(const GameTimer& gt) = 0;
     virtual void Draw(const GameTimer& gt) = 0;
+    virtual void DrawEnd(const GameTimer& gt) = 0;
 
     // Convenience overrides for handling mouse input.
     virtual void OnMouseDown(WPARAM btnState, int x, int y) { }
@@ -56,10 +58,24 @@ protected:
 
     void Create4xMsaaState();
     void CreateCommandObjects();
+    void CreateSwapChain();
+    void CreateCommandFence();
+    void CreateDescriptorSize();
+    void CreateRtvDescriptorHeaps();
+    void CreateDsvDescriptorHeaps();
+    void CreateViewPort();
+
+protected:
+    void FlushCommandQueue();
 
 public:
     bool Get4xMsaaState() const;
     void Set4xMsaaState(bool value);
+
+    ID3D12Resource* CurrentBackBuffer() const;
+    
+    D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView() const;
+    D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView() const;
 
 protected:
     ComPtr<IDXGIFactory4>    mdxgiFactory;
@@ -77,6 +93,35 @@ protected:
     ComPtr<ID3D12CommandQueue>          mCommandQueue;
     ComPtr<ID3D12CommandAllocator>      mCommandListAlloc;
     ComPtr<ID3D12GraphicsCommandList>   mCommandList;
+
+    //스왑체인 변수
+    ComPtr<IDXGISwapChain>              mSwapChain;
+    
+    static const int                    SwapChainBufferCount = 2;
+    int                                 mCurrentBackBuffer = 0;
+    ComPtr<ID3D12Resource>              mSwapChainBuffer[SwapChainBufferCount];
+
+    //펜스 관련 변수
+    ComPtr<ID3D12Fence>                 mFence;
+    UINT64                              mCurrentFence = 0;
+    
+    //서술자 크기 변수
+    UINT                                mRtvDescriptorSize = 0;
+    UINT                                mDsvDescriptorSize = 0;
+    UINT                                mCbvSrvUavDescriptorSize = 0;
+
+    //RTV 변수
+    ComPtr<ID3D12DescriptorHeap>        mRtvHeap;
+    D3D12_CPU_DESCRIPTOR_HANDLE         mSwapChainView[SwapChainBufferCount] = {};
+
+    //DSV 변수
+    ComPtr<ID3D12Resource>              mDepthStencilBuffer;
+    ComPtr<ID3D12DescriptorHeap>        mDsvHeap;
+    D3D12_CPU_DESCRIPTOR_HANDLE         mDepthStencilView = {};
+
+    // 뷰포트 변수
+    D3D12_VIEWPORT                      mScreenViewport;
+    D3D12_RECT                          mScissorRect;
 
 protected:
 
