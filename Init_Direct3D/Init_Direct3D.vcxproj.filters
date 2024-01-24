@@ -13,6 +13,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="세이더 파일">
+      <UniqueIdentifier>{dd845cc0-d5c8-4697-b435-98e2dc2b8f93}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="D3DApp.h">
@@ -30,6 +33,9 @@
     <ClInclude Include="..\Common\GameTimer.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="..\Common\MathHelper.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="D3DApp.cpp">
@@ -44,5 +50,13 @@
     <ClCompile Include="..\Common\GameTimer.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="..\Common\MathHelper.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Color.hlsl">
+      <Filter>세이더 파일</Filter>
+    </None>
   </ItemGroup>
 </Project>
