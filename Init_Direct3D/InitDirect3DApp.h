@@ -33,6 +33,9 @@ private:
 	virtual void Draw(const GameTimer& gt)override;
 	virtual void DrawEnd(const GameTimer& gt)override;
 
+	virtual void OnMouseDown(WPARAM btnState, int x, int y) override;
+	virtual void OnMouseUp(WPARAM btnState, int x, int y) override;
+	virtual void OnMouseMove(WPARAM btnState, int x, int y) override;
 private:
 	void BuildInputLayout();
 	void BuildGeometry();

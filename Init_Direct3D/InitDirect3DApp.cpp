@@ -150,6 +150,43 @@ void InitDirect3DApp::DrawEnd(const GameTimer& gt)
     FlushCommandQueue();
 }
 
+void InitDirect3DApp::OnMouseDown(WPARAM btnState, int x, int y)
+{
+    mLastMovesePos.x = x;
+    mLastMovesePos.y = y;
+    
+    SetCapture(mhMainWnd);
+}
+
+void InitDirect3DApp::OnMouseUp(WPARAM btnState, int x, int y)
+{
+    ReleaseCapture();
+}
+
+void InitDirect3DApp::OnMouseMove(WPARAM btnState, int x, int y)
+{
+    if ((btnState & MK_LBUTTON) != 0)
+    {
+        float dx = XMConvertToRadians(0.25f * static_cast<float>(x - mLastMovesePos.x));
+        float dy = XMConvertToRadians(0.25f * static_cast<float>(y - mLastMovesePos.y));
+        mTheta += dx;
+        mPhi += dy;
+        mPhi = MathHelper::Clamp(mPhi, 0.1f, MathHelper::Pi - 0.1f);
+    }
+    else if ((btnState & MK_RBUTTON) != 0)
+    {
+        float dx = 0.2f * static_cast<float>(x - mLastMovesePos.x);
+        float dy = 0.2f * static_cast<float>(y - mLastMovesePos.y);
+
+        mRadius += dx - dy;
+
+        mRadius = MathHelper::Clamp(mRadius, 3.0f, 150.f);
+    }
+
+    mLastMovesePos.x = x;
+    mLastMovesePos.y = y;
+}
+
 void InitDirect3DApp::BuildInputLayout()
 {
     mInputLayout =
@@ -162,16 +199,37 @@ void InitDirect3DApp::BuildInputLayout()
 void InitDirect3DApp::BuildGeometry()
 {
     //정점 정보
-    std::array<Vertex, 3> vertices =
+    std::array<Vertex, 8> vertices =
     {
-        Vertex({XMFLOAT3(0.0f, 0.5f, 0.0f), XMFLOAT4(Colors::Red)}), //0
-        Vertex({XMFLOAT3(0.5f, -0.5f, 0.0f), XMFLOAT4(Colors::Blue)}), //1
+        Vertex({XMFLOAT3(-0.5f, 0.5f, 0.0f), XMFLOAT4(Colors::Red)}), //0
+        Vertex({XMFLOAT3(0.5f, 0.5f, 0.0f), XMFLOAT4(Colors::Blue)}), //1
         Vertex({XMFLOAT3(-0.5f, -0.5f, 0.0f), XMFLOAT4(Colors::Green)}), //2
+        Vertex({XMFLOAT3(0.5f, -0.5f, 0.0f), XMFLOAT4(Colors::Red)}), //3
+        Vertex({XMFLOAT3(-0.5f, 0.5f, -0.5f), XMFLOAT4(Colors::Red)}), //4
+        Vertex({XMFLOAT3(0.5f, 0.5f, -0.5f), XMFLOAT4(Colors::Blue)}), //5
+        Vertex({XMFLOAT3(-0.5f, -0.5f, -0.5f), XMFLOAT4(Colors::Green)}), //6
+        Vertex({XMFLOAT3(0.5f, -0.5f, -0.5f), XMFLOAT4(Colors::Red)}), //7
     };
 
-    std::array<std::uint16_t, 3> indices =
+    std::array<std::uint16_t, 36> indices =
     {
-        0, 1, 2
+        0,2,1, 
+        1,2,3,
+        
+        4,2,0, 
+        2,4,6, 
+        
+        5,6,4, 
+        5,7,6, 
+        
+        5,1,3,
+        5,3,7, 
+        
+        4,0,1, 
+        5,4,1,
+        
+        6,3,2,
+        6,7,3
     };
 
     // 정점 버퍼 만들기
