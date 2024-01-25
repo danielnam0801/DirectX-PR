@@ -201,10 +201,10 @@ void InitDirect3DApp::BuildGeometry()
     //정점 정보
     std::array<Vertex, 8> vertices =
     {
-        Vertex({XMFLOAT3(-0.5f, 0.5f, 0.0f), XMFLOAT4(Colors::Red)}), //0
-        Vertex({XMFLOAT3(0.5f, 0.5f, 0.0f), XMFLOAT4(Colors::Blue)}), //1
-        Vertex({XMFLOAT3(-0.5f, -0.5f, 0.0f), XMFLOAT4(Colors::Green)}), //2
-        Vertex({XMFLOAT3(0.5f, -0.5f, 0.0f), XMFLOAT4(Colors::Red)}), //3
+        Vertex({XMFLOAT3(-0.5f, 0.5f, 0.5f), XMFLOAT4(Colors::Red)}), //0
+        Vertex({XMFLOAT3(0.5f, 0.5f, 0.5f), XMFLOAT4(Colors::Blue)}), //1
+        Vertex({XMFLOAT3(-0.5f, -0.5f, 0.5f), XMFLOAT4(Colors::Green)}), //2
+        Vertex({XMFLOAT3(0.5f, -0.5f, 0.5f), XMFLOAT4(Colors::Red)}), //3
         Vertex({XMFLOAT3(-0.5f, 0.5f, -0.5f), XMFLOAT4(Colors::Red)}), //4
         Vertex({XMFLOAT3(0.5f, 0.5f, -0.5f), XMFLOAT4(Colors::Blue)}), //5
         Vertex({XMFLOAT3(-0.5f, -0.5f, -0.5f), XMFLOAT4(Colors::Green)}), //6
