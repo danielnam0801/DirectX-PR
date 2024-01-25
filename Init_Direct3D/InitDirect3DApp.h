@@ -49,6 +49,21 @@ struct GeometryInfo
 	int IndexCount = 0;
 };
 
+//렌더링할 오브젝트 구조체
+struct RenderItem
+{
+	RenderItem() = default;
+
+	UINT ObjCBIndex = -1;
+
+	XMFLOAT4X4 World = MathHelper::Identity4x4();
+	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	
+	GeometryInfo* Geo = nullptr;
+	
+	int IndexCount = 0;
+};
+
 class InitDirect3DApp : public D3DApp
 {
 public:
@@ -65,6 +80,7 @@ private:
 	void UpdatePassCB(const GameTimer& gt);
 	virtual void DrawBegin(const GameTimer& gt)override;
 	virtual void Draw(const GameTimer& gt)override;
+	void DrawRenderItems();
 	virtual void DrawEnd(const GameTimer& gt)override;
 
 	virtual void OnMouseDown(WPARAM btnState, int x, int y) override;
@@ -78,6 +94,7 @@ private:
 	void BuildSphereGeometry();
 	void BuildCylinderGeometry();
 	void BuildSkullGeometry();
+	void BuildRenderItem();
 	void BuildShader();
 	void BuildConstantBuffer();
 	void BuildRootSignature();
@@ -109,6 +126,9 @@ private:
 
 	// 기하 구조 맵
 	std::unordered_map<std::string, std::unique_ptr<GeometryInfo>> mGeoMetries;
+
+	//렌더링할 오브젝트 리스트
+	std::vector<std::unique_ptr<RenderItem>> mRenderItems;
 
 	//월드  / 시야 / 투영 행렬
 	XMFLOAT4X4 mWorld = MathHelper::Identity4x4();

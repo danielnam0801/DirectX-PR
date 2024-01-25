@@ -43,6 +43,7 @@ bool InitDirect3DApp::Initialize()
     //초기화 명령들
     BuildInputLayout();
     BuildGeometry();
+    BuildRenderItem();
     BuildShader();
     BuildConstantBuffer();
     BuildRootSignature();
@@ -95,6 +96,17 @@ void InitDirect3DApp::UpdateCamera(const GameTimer& gt)
 void InitDirect3DApp::UpdateObjectCB(const GameTimer& gt)
 {
     // 개별 오브젝트 상수 버퍼 갱신
+    for (auto& item : mRenderItems)
+    {
+        XMMATRIX world = XMLoadFloat4x4(&item->World);
+
+        ObjectConstants objConstants;
+        XMStoreFloat4x4(&objConstants.World, XMMatrixTranspose(world));
+        
+        UINT elementIndex = item->ObjCBIndex;
+        UINT elementByteSize = (sizeof(ObjectConstants) + 255) & ~255;
+        memcpy(&mObjectMappedData[elementIndex * elementByteSize], &objConstants, sizeof(ObjectConstants));
+    }
 }
 
 void InitDirect3DApp::UpdatePassCB(const GameTimer& gt)
@@ -142,18 +154,34 @@ void InitDirect3DApp::Draw(const GameTimer& gt)
     // 루트 시그니처 바인딩
     mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
 
-    // 개별 오브젝트 렌더링
-    // 상수 버퍼 바인딩
-    D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = mObjectCB->GetGPUVirtualAddress();
-    mCommandList->SetGraphicsRootConstantBufferView(0, objCBAddress);
+    // 공용 상수 버퍼 바인딩
+    D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = mPassCB->GetGPUVirtualAddress();
+    mCommandList->SetGraphicsRootConstantBufferView(1, passCBAddress);
 
-    // 삼각형 정점 정보와 인덱스 정보 셋팅
-    mCommandList->IASetVertexBuffers(0, 1, &VertexBufferView);
-    mCommandList->IASetIndexBuffer(&IndexBufferView);
-    mCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    DrawRenderItems();
+}
 
-    // 삼각형 그리기
-    mCommandList->DrawIndexedInstanced(IndexCount, 1, 0, 0, 0);
+void InitDirect3DApp::DrawRenderItems()
+{
+    UINT objCBByteSize = (sizeof(ObjectConstants) + 255) & ~255;
+    
+    for (size_t i = 0; i < mRenderItems.size(); ++i)
+    {
+        auto item = mRenderItems[i].get();
+
+        //개별 오브젝트 상수 버퍼 뷰 설정
+        D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = mObjectCB->GetGPUVirtualAddress();
+        objCBAddress += item->ObjCBIndex * objCBByteSize;
+        
+        mCommandList->SetGraphicsRootConstantBufferView(0, objCBAddress);
+
+        mCommandList->IASetVertexBuffers(0, 1, &item->Geo->VertexBufferView);
+        mCommandList->IASetIndexBuffer(&item->Geo->IndexBufferView);
+        mCommandList->IASetPrimitiveTopology(item->PrimitiveType);
+
+        mCommandList->DrawIndexedInstanced(item->Geo->IndexCount, 1, 0, 0, 0);
+    }
+
 }
 
 void InitDirect3DApp::DrawEnd(const GameTimer& gt)
@@ -221,6 +249,10 @@ void InitDirect3DApp::BuildInputLayout()
 void InitDirect3DApp::BuildGeometry()
 {
     BuildBoxGeometry();
+    BuildGridGeometry();
+    BuildSphereGeometry();
+    BuildCylinderGeometry();
+    BuildSkullGeometry();
 }
 
 void InitDirect3DApp::BuildBoxGeometry()
@@ -297,18 +329,383 @@ void InitDirect3DApp::BuildBoxGeometry()
 
 void InitDirect3DApp::BuildGridGeometry()
 {
+    GeometryGenerator geoGen;
+    GeometryGenerator::MeshData grid = geoGen.CreateGrid(20.0f, 30.0f, 60, 40);
+
+    std::vector<Vertex> vertices(grid.Vertices.size());
+
+    for (UINT i = 0; i < grid.Vertices.size(); ++i)
+    {
+        vertices[i].Pos = grid.Vertices[i].Position;
+        vertices[i].Color = XMFLOAT4(grid.Vertices[i].Normal.x, grid.Vertices[i].Normal.y, grid.Vertices
+            [i].Normal.z, 1.0f);
+    }
+
+    std::vector<std::uint16_t> indices;
+    indices.insert(indices.end(), std::begin(grid.GetIndices16()), std::end(grid.GetIndices16()));
+
+    auto geo = std::make_unique<GeometryInfo>();
+    geo->Name = "Grid";
+    geo->VertexCount = (UINT)vertices.size();
+    const UINT vbByteSize = geo->VertexCount * sizeof(Vertex);
+
+    D3D12_HEAP_PROPERTIES heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(vbByteSize);
+
+    md3dDevice->CreateCommittedResource(
+        &heapProperty,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&geo->VertexBuffer));
+
+    void* vertexDataBuffer = nullptr;
+    CD3DX12_RANGE vertexRange(0, 0);
+    geo->VertexBuffer->Map(0, &vertexRange, &vertexDataBuffer);
+    memcpy(vertexDataBuffer, vertices.data(), vbByteSize);
+    geo->VertexBuffer->Unmap(0, nullptr);
+
+    geo->VertexBufferView.BufferLocation = geo->VertexBuffer->GetGPUVirtualAddress();
+    geo->VertexBufferView.StrideInBytes = sizeof(Vertex);
+    geo->VertexBufferView.SizeInBytes = vbByteSize;
+
+    //인덱스 버퍼 만들기
+    geo->IndexCount = (UINT)indices.size();
+    const UINT ibByteSize = geo->IndexCount * sizeof(std::uint16_t);
+
+    heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    desc = CD3DX12_RESOURCE_DESC::Buffer(ibByteSize);
+
+    md3dDevice->CreateCommittedResource(
+        &heapProperty,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&geo->IndexBuffer));
+
+    void* indexDataBuffer = nullptr;
+    CD3DX12_RANGE indexRange(0, 0);
+    geo->IndexBuffer->Map(0, &indexRange, &indexDataBuffer);
+    memcpy(indexDataBuffer, indices.data(), ibByteSize);
+    geo->IndexBuffer->Unmap(0, nullptr);
+
+    geo->IndexBufferView.BufferLocation = geo->IndexBuffer->GetGPUVirtualAddress();
+    geo->IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
+    geo->IndexBufferView.SizeInBytes = ibByteSize;
+
+    mGeoMetries[geo->Name] = std::move(geo);
+
 }
 
 void InitDirect3DApp::BuildSphereGeometry()
 {
+    GeometryGenerator geoGen;
+    GeometryGenerator::MeshData sphere = geoGen.CreateSphere(0.5f, 20, 20);
+
+    std::vector<Vertex> vertices(sphere.Vertices.size());
+
+    for (UINT i = 0; i < sphere.Vertices.size(); ++i)
+    {
+        vertices[i].Pos = sphere.Vertices[i].Position;
+        vertices[i].Color = XMFLOAT4(sphere.Vertices[i].Normal.x, sphere.Vertices[i].Normal.y, sphere.Vertices
+            [i].Normal.z, 1.0f);
+    }
+
+    std::vector<std::uint16_t> indices;
+    indices.insert(indices.end(), std::begin(sphere.GetIndices16()), std::end(sphere.GetIndices16()));
+
+    auto geo = std::make_unique<GeometryInfo>();
+    geo->Name = "Sphere";
+    geo->VertexCount = (UINT)vertices.size();
+    const UINT vbByteSize = geo->VertexCount * sizeof(Vertex);
+
+    D3D12_HEAP_PROPERTIES heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(vbByteSize);
+
+    md3dDevice->CreateCommittedResource(
+        &heapProperty,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&geo->VertexBuffer));
+
+    void* vertexDataBuffer = nullptr;
+    CD3DX12_RANGE vertexRange(0, 0);
+    geo->VertexBuffer->Map(0, &vertexRange, &vertexDataBuffer);
+    memcpy(vertexDataBuffer, vertices.data(), vbByteSize);
+    geo->VertexBuffer->Unmap(0, nullptr);
+
+    geo->VertexBufferView.BufferLocation = geo->VertexBuffer->GetGPUVirtualAddress();
+    geo->VertexBufferView.StrideInBytes = sizeof(Vertex);
+    geo->VertexBufferView.SizeInBytes = vbByteSize;
+
+    //인덱스 버퍼 만들기
+    geo->IndexCount = (UINT)indices.size();
+    const UINT ibByteSize = geo->IndexCount * sizeof(std::uint16_t);
+
+    heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    desc = CD3DX12_RESOURCE_DESC::Buffer(ibByteSize);
+
+    md3dDevice->CreateCommittedResource(
+        &heapProperty,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&geo->IndexBuffer));
+
+    void* indexDataBuffer = nullptr;
+    CD3DX12_RANGE indexRange(0, 0);
+    geo->IndexBuffer->Map(0, &indexRange, &indexDataBuffer);
+    memcpy(indexDataBuffer, indices.data(), ibByteSize);
+    geo->IndexBuffer->Unmap(0, nullptr);
+
+    geo->IndexBufferView.BufferLocation = geo->IndexBuffer->GetGPUVirtualAddress();
+    geo->IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
+    geo->IndexBufferView.SizeInBytes = ibByteSize;
+
+    mGeoMetries[geo->Name] = std::move(geo);
 }
 
 void InitDirect3DApp::BuildCylinderGeometry()
 {
+    GeometryGenerator geoGen;
+    GeometryGenerator::MeshData cylinder = geoGen.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
+
+    std::vector<Vertex> vertices(cylinder.Vertices.size());
+
+    for (UINT i = 0; i < cylinder.Vertices.size(); ++i)
+    {
+        vertices[i].Pos = cylinder.Vertices[i].Position;
+        vertices[i].Color = XMFLOAT4(cylinder.Vertices[i].Normal.x, cylinder.Vertices[i].Normal.y, cylinder.Vertices
+            [i].Normal.z, 1.0f);
+    }
+
+    std::vector<std::uint16_t> indices;
+    indices.insert(indices.end(), std::begin(cylinder.GetIndices16()), std::end(cylinder.GetIndices16()));
+
+    auto geo = std::make_unique<GeometryInfo>();
+    geo->Name = "Cylinder";
+    geo->VertexCount = (UINT)vertices.size();
+    const UINT vbByteSize = geo->VertexCount * sizeof(Vertex);
+
+    D3D12_HEAP_PROPERTIES heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(vbByteSize);
+
+    md3dDevice->CreateCommittedResource(
+        &heapProperty,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&geo->VertexBuffer));
+
+    void* vertexDataBuffer = nullptr;
+    CD3DX12_RANGE vertexRange(0, 0);
+    geo->VertexBuffer->Map(0, &vertexRange, &vertexDataBuffer);
+    memcpy(vertexDataBuffer, vertices.data(), vbByteSize);
+    geo->VertexBuffer->Unmap(0, nullptr);
+
+    geo->VertexBufferView.BufferLocation = geo->VertexBuffer->GetGPUVirtualAddress();
+    geo->VertexBufferView.StrideInBytes = sizeof(Vertex);
+    geo->VertexBufferView.SizeInBytes = vbByteSize;
+
+    //인덱스 버퍼 만들기
+    geo->IndexCount = (UINT)indices.size();
+    const UINT ibByteSize = geo->IndexCount * sizeof(std::uint16_t);
+
+    heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    desc = CD3DX12_RESOURCE_DESC::Buffer(ibByteSize);
+
+    md3dDevice->CreateCommittedResource(
+        &heapProperty,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&geo->IndexBuffer));
+
+    void* indexDataBuffer = nullptr;
+    CD3DX12_RANGE indexRange(0, 0);
+    geo->IndexBuffer->Map(0, &indexRange, &indexDataBuffer);
+    memcpy(indexDataBuffer, indices.data(), ibByteSize);
+    geo->IndexBuffer->Unmap(0, nullptr);
+
+    geo->IndexBufferView.BufferLocation = geo->IndexBuffer->GetGPUVirtualAddress();
+    geo->IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
+    geo->IndexBufferView.SizeInBytes = ibByteSize;
+
+    mGeoMetries[geo->Name] = std::move(geo);
 }
 
 void InitDirect3DApp::BuildSkullGeometry()
 {
+    std::ifstream fin("../Models/skull.txt");
+    if (!fin)
+    {
+        MessageBox(0, L"../Models/skull.txt not found.", 0, 0);
+        return;
+    }
+
+    UINT vCount = 0;
+    UINT tCount = 0;
+    std::string ignore;
+    
+    fin >> ignore >> vCount;
+    fin >> ignore >> tCount;
+    fin >> ignore >> ignore >> ignore >> ignore;
+
+    std::vector<Vertex> vertices(vCount);
+    for (UINT i = 0; i < vCount; ++i)
+    {
+        fin >> vertices[i].Pos.x >> vertices[i].Pos.y >> vertices[i].Pos.z;
+        fin >> vertices[i].Color.x >> vertices[i].Color.y >> vertices[i].Color.z;
+    }
+
+    fin >> ignore;
+    fin >> ignore;
+    fin >> ignore;
+    
+    std::vector<std::int32_t> indices(3 * tCount);
+    for (UINT i = 0; i < tCount; ++i)
+    {
+        fin >> indices[i * 3 + 0] >> indices[i * 3 + 1] >> indices[i * 3 + 2];
+    }
+
+    auto geo = std::make_unique<GeometryInfo>();
+    geo->Name = "Skull";
+    geo->VertexCount = (UINT)vertices.size();
+    const UINT vbByteSize = geo->VertexCount * sizeof(Vertex);
+
+    D3D12_HEAP_PROPERTIES heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(vbByteSize);
+
+    md3dDevice->CreateCommittedResource(
+        &heapProperty,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&geo->VertexBuffer));
+
+    void* vertexDataBuffer = nullptr;
+    CD3DX12_RANGE vertexRange(0, 0);
+    geo->VertexBuffer->Map(0, &vertexRange, &vertexDataBuffer);
+    memcpy(vertexDataBuffer, vertices.data(), vbByteSize);
+    geo->VertexBuffer->Unmap(0, nullptr);
+
+    geo->VertexBufferView.BufferLocation = geo->VertexBuffer->GetGPUVirtualAddress();
+    geo->VertexBufferView.StrideInBytes = sizeof(Vertex);
+    geo->VertexBufferView.SizeInBytes = vbByteSize;
+
+    //인덱스 버퍼 만들기
+    geo->IndexCount = (UINT)indices.size();
+    const UINT ibByteSize = geo->IndexCount * sizeof(std::int32_t);
+
+    heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    desc = CD3DX12_RESOURCE_DESC::Buffer(ibByteSize);
+
+    md3dDevice->CreateCommittedResource(
+        &heapProperty,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&geo->IndexBuffer));
+
+    void* indexDataBuffer = nullptr;
+    CD3DX12_RANGE indexRange(0, 0);
+    geo->IndexBuffer->Map(0, &indexRange, &indexDataBuffer);
+    memcpy(indexDataBuffer, indices.data(), ibByteSize);
+    geo->IndexBuffer->Unmap(0, nullptr);
+
+    geo->IndexBufferView.BufferLocation = geo->IndexBuffer->GetGPUVirtualAddress();
+    geo->IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+    geo->IndexBufferView.SizeInBytes = ibByteSize;
+
+    mGeoMetries[geo->Name] = std::move(geo);
+
+    fin.close();
+}
+
+void InitDirect3DApp::BuildRenderItem()
+{
+    auto gridItem = std::make_unique<RenderItem>();
+    gridItem->ObjCBIndex = 0;
+    gridItem->World = MathHelper::Identity4x4();
+    gridItem->Geo = mGeoMetries["Grid"].get();
+    gridItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+    gridItem->IndexCount = gridItem->Geo->IndexCount;
+    mRenderItems.push_back(std::move(gridItem));
+
+    auto boxItem = std::make_unique<RenderItem>();
+    boxItem->ObjCBIndex = 1;
+    XMStoreFloat4x4(&boxItem->World, XMMatrixScaling(2.0f, 2.0f, 2.0f) * XMMatrixTranslation(0.0f, 0.5f, 0.0f));
+    boxItem->Geo = mGeoMetries["Box"].get();
+    boxItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+    boxItem->IndexCount = boxItem->Geo->IndexCount;
+    mRenderItems.push_back(std::move(boxItem));
+
+    //해골
+    auto skullItem = std::make_unique<RenderItem>();
+    skullItem->ObjCBIndex = 2;
+    XMStoreFloat4x4(&skullItem->World, XMMatrixScaling(0.5f, 0.5f, 0.5f) * XMMatrixTranslation(0.0f, 1.f, 0.0f));
+    skullItem->Geo = mGeoMetries["Skull"].get();
+    skullItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+    skullItem->IndexCount = skullItem->Geo->IndexCount;
+    mRenderItems.push_back(std::move(skullItem));
+
+    UINT objCBIndex = 3;
+    for (int i = 0; i < 5; ++i)
+    {
+        auto leftCylItem = std::make_unique<RenderItem>();
+        auto rightCylItem = std::make_unique<RenderItem>();
+        auto leftsphereItem = std::make_unique<RenderItem>();
+        auto rightsphereItem = std::make_unique<RenderItem>();
+
+        XMMATRIX leftCylWorld = XMMatrixTranslation(-5.0f, 1.5f, -10.0f + i * 5.0f);
+        XMMATRIX rightCylWorld = XMMatrixTranslation(+5.0f, 1.5f, -10.0f + i * 5.0f);
+
+        XMMATRIX leftsphereWorld = XMMatrixTranslation(-5.0f, 3.5f, -10.0f + i * 5.0f);
+        XMMATRIX rightsphereWorld = XMMatrixTranslation(+5.0f, 3.5f, -10.0f + i * 5.0f);
+
+        //왼쪽 실린더
+        XMStoreFloat4x4(&leftCylItem->World, leftCylWorld);
+        leftCylItem->ObjCBIndex = objCBIndex++;
+        leftCylItem->Geo = mGeoMetries["Cylinder"].get();
+        leftCylItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+        leftCylItem->IndexCount = leftCylItem->Geo->IndexCount;
+        mRenderItems.push_back(std::move(leftCylItem));
+
+        //오른쪽 실린더
+        XMStoreFloat4x4(&rightCylItem->World, rightCylWorld);
+        rightCylItem->ObjCBIndex = objCBIndex++;
+        rightCylItem->Geo = mGeoMetries["Cylinder"].get();
+        rightCylItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+        rightCylItem->IndexCount = rightCylItem->Geo->IndexCount;
+        mRenderItems.push_back(std::move(rightCylItem));
+
+        //왼쪽 스피어
+        XMStoreFloat4x4(&leftsphereItem->World, leftsphereWorld);
+        leftsphereItem->ObjCBIndex = objCBIndex++;
+        leftsphereItem->Geo = mGeoMetries["Sphere"].get();
+        leftsphereItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+        leftsphereItem->IndexCount = leftsphereItem->Geo->IndexCount;
+        mRenderItems.push_back(std::move(leftsphereItem));
+
+        //오른쪽 스피어
+        XMStoreFloat4x4(&rightsphereItem->World, rightsphereWorld);
+        rightsphereItem->ObjCBIndex = objCBIndex++;
+        rightsphereItem->Geo = mGeoMetries["Sphere"].get();
+        rightsphereItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+        rightsphereItem->IndexCount = rightsphereItem->Geo->IndexCount;
+        mRenderItems.push_back(std::move(rightsphereItem));
+    }
+
+
 }
 
 void InitDirect3DApp::BuildShader()
@@ -321,7 +718,7 @@ void InitDirect3DApp::BuildConstantBuffer()
 {
     // 개별 오브젝트 상수 버퍼
     UINT size = sizeof(ObjectConstants);
-    mObjectByteSize = (size + 255) & ~255;
+    mObjectByteSize = ((size + 255) & ~255) * mRenderItems.size();
 
     D3D12_HEAP_PROPERTIES heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
     D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(mObjectByteSize);
@@ -338,7 +735,7 @@ void InitDirect3DApp::BuildConstantBuffer()
 
     // 공용 상수 버퍼
     size = sizeof(PassConstants);
-    mPassByteSize = (size + 255) & ~255;
+    mPassByteSize = ((size + 255) & ~255);
     heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
     desc = CD3DX12_RESOURCE_DESC::Buffer(mPassByteSize);
 
