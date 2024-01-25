@@ -72,6 +72,13 @@ void InitDirect3DApp::OnResize()
 void InitDirect3DApp::Update(const GameTimer& gt)
 {
     // 구면 좌표를 직교 좌표
+    UpdateCamera(gt);
+    UpdateObjectCB(gt);
+    UpdatePassCB(gt);
+}
+
+void InitDirect3DApp::UpdateCamera(const GameTimer& gt)
+{
     float x = mRadius * sinf(mPhi) * cosf(mTheta);
     float z = mRadius * sinf(mPhi) * sinf(mTheta);
     float y = mRadius * cosf(mPhi);
@@ -83,15 +90,30 @@ void InitDirect3DApp::Update(const GameTimer& gt)
 
     XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
     XMStoreFloat4x4(&mView, view);
+}
 
-    XMMATRIX world = XMLoadFloat4x4(&mWorld);
+void InitDirect3DApp::UpdateObjectCB(const GameTimer& gt)
+{
+    // 개별 오브젝트 상수 버퍼 갱신
+}
+
+void InitDirect3DApp::UpdatePassCB(const GameTimer& gt)
+{
+    PassConstants mainPass;
+    XMMATRIX view = XMLoadFloat4x4(&mView);
     XMMATRIX proj = XMLoadFloat4x4(&mProj);
-    XMMATRIX worldViewProj = world * view * proj;
 
-    //상수 버퍼 갱신
-    ObjectConstants objConstants;
-    XMStoreFloat4x4(&objConstants.WorldViewProj, XMMatrixTranspose(worldViewProj));
-    ::memcpy(&mObjectMappedData[0], &objConstants, sizeof(ObjectConstants));
+    XMMATRIX invView = XMMatrixInverse(&XMMatrixDeterminant(view), view);
+    XMMATRIX invProj = XMMatrixInverse(&XMMatrixDeterminant(proj), proj);
+    XMMATRIX viewProj = XMMatrixMultiply(view, proj);
+
+    XMStoreFloat4x4(&mainPass.View, XMMatrixTranspose(view));
+    XMStoreFloat4x4(&mainPass.InvView, XMMatrixTranspose(invView));
+    XMStoreFloat4x4(&mainPass.Proj, XMMatrixTranspose(proj));
+    XMStoreFloat4x4(&mainPass.InvProj, XMMatrixTranspose(invProj));
+    XMStoreFloat4x4(&mainPass.ViewProj, XMMatrixTranspose(viewProj));
+   
+    memcpy(&mPassMappedData[0], &mainPass, sizeof(PassConstants));
 }
 
 void InitDirect3DApp::DrawBegin(const GameTimer& gt)
@@ -198,43 +220,30 @@ void InitDirect3DApp::BuildInputLayout()
 
 void InitDirect3DApp::BuildGeometry()
 {
-    //정점 정보
-    std::array<Vertex, 8> vertices =
-    {
-        Vertex({XMFLOAT3(-0.5f, 0.5f, 0.5f), XMFLOAT4(Colors::Red)}), //0
-        Vertex({XMFLOAT3(0.5f, 0.5f, 0.5f), XMFLOAT4(Colors::Blue)}), //1
-        Vertex({XMFLOAT3(-0.5f, -0.5f, 0.5f), XMFLOAT4(Colors::Green)}), //2
-        Vertex({XMFLOAT3(0.5f, -0.5f, 0.5f), XMFLOAT4(Colors::Red)}), //3
-        Vertex({XMFLOAT3(-0.5f, 0.5f, -0.5f), XMFLOAT4(Colors::Red)}), //4
-        Vertex({XMFLOAT3(0.5f, 0.5f, -0.5f), XMFLOAT4(Colors::Blue)}), //5
-        Vertex({XMFLOAT3(-0.5f, -0.5f, -0.5f), XMFLOAT4(Colors::Green)}), //6
-        Vertex({XMFLOAT3(0.5f, -0.5f, -0.5f), XMFLOAT4(Colors::Red)}), //7
-    };
+    BuildBoxGeometry();
+}
 
-    std::array<std::uint16_t, 36> indices =
-    {
-        0,2,1, 
-        1,2,3,
-        
-        4,2,0, 
-        2,4,6, 
-        
-        5,6,4, 
-        5,7,6, 
-        
-        5,1,3,
-        5,3,7, 
-        
-        4,0,1, 
-        5,4,1,
-        
-        6,3,2,
-        6,7,3
-    };
+void InitDirect3DApp::BuildBoxGeometry()
+{
+    GeometryGenerator geoGen;
+    GeometryGenerator::MeshData box = geoGen.CreateBox(1.5f, 0.5f, 1.5f, 3);
 
-    // 정점 버퍼 만들기
-    VertexCount = (UINT)vertices.size();
-    const UINT vbByteSize = VertexCount * sizeof(Vertex);
+    std::vector<Vertex> vertices(box.Vertices.size());
+
+    for (UINT i = 0; i < box.Vertices.size(); ++i)
+    {
+        vertices[i].Pos = box.Vertices[i].Position;
+        vertices[i].Color = XMFLOAT4(box.Vertices[i].Normal.x, box.Vertices[i].Normal.y, box.Vertices
+            [i].Normal.z, 1.0f);
+    }
+
+    std::vector<std::uint16_t> indices;
+    indices.insert(indices.end(), std::begin(box.GetIndices16()), std::end(box.GetIndices16()));
+
+    auto geo = std::make_unique<GeometryInfo>();
+    geo->Name = "Box";
+    geo->VertexCount = (UINT)vertices.size();
+    const UINT vbByteSize = geo->VertexCount * sizeof(Vertex);
 
     D3D12_HEAP_PROPERTIES heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
     D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(vbByteSize);
@@ -245,22 +254,22 @@ void InitDirect3DApp::BuildGeometry()
         &desc,
         D3D12_RESOURCE_STATE_GENERIC_READ,
         nullptr,
-        IID_PPV_ARGS(&VertexBuffer));
-
+        IID_PPV_ARGS(&geo->VertexBuffer));
+    
     void* vertexDataBuffer = nullptr;
     CD3DX12_RANGE vertexRange(0, 0);
-    VertexBuffer->Map(0, &vertexRange, &vertexDataBuffer);
-    ::memcpy(vertexDataBuffer, &vertices, vbByteSize);
-    VertexBuffer->Unmap(0, nullptr);
-    
-    VertexBufferView.BufferLocation = VertexBuffer->GetGPUVirtualAddress();
-    VertexBufferView.StrideInBytes = sizeof(Vertex);
-    VertexBufferView.SizeInBytes = vbByteSize;
+    geo->VertexBuffer->Map(0, &vertexRange, &vertexDataBuffer);
+    memcpy(vertexDataBuffer, vertices.data(), vbByteSize);
+    geo->VertexBuffer->Unmap(0, nullptr);
+
+    geo->VertexBufferView.BufferLocation = geo->VertexBuffer->GetGPUVirtualAddress();
+    geo->VertexBufferView.StrideInBytes = sizeof(Vertex);
+    geo->VertexBufferView.SizeInBytes = vbByteSize;
 
     //인덱스 버퍼 만들기
-    IndexCount = (UINT)indices.size();
-    const UINT ibByteSize = IndexCount * sizeof(std::uint16_t);
-    
+    geo->IndexCount = (UINT)indices.size();
+    const UINT ibByteSize = geo->IndexCount * sizeof(std::uint16_t);
+
     heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
     desc = CD3DX12_RESOURCE_DESC::Buffer(ibByteSize);
 
@@ -270,17 +279,36 @@ void InitDirect3DApp::BuildGeometry()
         &desc,
         D3D12_RESOURCE_STATE_GENERIC_READ,
         nullptr,
-        IID_PPV_ARGS(&IndexBuffer));
+        IID_PPV_ARGS(&geo->IndexBuffer));
 
     void* indexDataBuffer = nullptr;
     CD3DX12_RANGE indexRange(0, 0);
-    IndexBuffer->Map(0, &indexRange, &indexDataBuffer);
-    ::memcpy(indexDataBuffer, &indices, ibByteSize);
-    IndexBuffer->Unmap(0, nullptr);
+    geo->IndexBuffer->Map(0, &indexRange, &indexDataBuffer);
+    memcpy(indexDataBuffer, indices.data(), ibByteSize);
+    geo->IndexBuffer->Unmap(0, nullptr);
+    
+    geo->IndexBufferView.BufferLocation = geo->IndexBuffer->GetGPUVirtualAddress();
+    geo->IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
+    geo->IndexBufferView.SizeInBytes = ibByteSize;
 
-    IndexBufferView.BufferLocation = IndexBuffer->GetGPUVirtualAddress();
-    IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
-    IndexBufferView.SizeInBytes = ibByteSize;
+    mGeoMetries[geo->Name] = std::move(geo);
+
+}
+
+void InitDirect3DApp::BuildGridGeometry()
+{
+}
+
+void InitDirect3DApp::BuildSphereGeometry()
+{
+}
+
+void InitDirect3DApp::BuildCylinderGeometry()
+{
+}
+
+void InitDirect3DApp::BuildSkullGeometry()
+{
 }
 
 void InitDirect3DApp::BuildShader()
@@ -291,6 +319,7 @@ void InitDirect3DApp::BuildShader()
 
 void InitDirect3DApp::BuildConstantBuffer()
 {
+    // 개별 오브젝트 상수 버퍼
     UINT size = sizeof(ObjectConstants);
     mObjectByteSize = (size + 255) & ~255;
 
@@ -306,12 +335,29 @@ void InitDirect3DApp::BuildConstantBuffer()
         IID_PPV_ARGS(&mObjectCB));
 
     mObjectCB->Map(0, nullptr, reinterpret_cast<void**>(&mObjectMappedData));
+
+    // 공용 상수 버퍼
+    size = sizeof(PassConstants);
+    mPassByteSize = (size + 255) & ~255;
+    heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    desc = CD3DX12_RESOURCE_DESC::Buffer(mPassByteSize);
+
+    md3dDevice->CreateCommittedResource(
+        &heapProperty,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&mPassCB));
+
+    mPassCB->Map(0, nullptr, reinterpret_cast<void**>(&mPassMappedData));
 }
 
 void InitDirect3DApp::BuildRootSignature()
 {
-    CD3DX12_ROOT_PARAMETER param[1];
-    param[0].InitAsConstantBufferView(0); // 0번 -> b0 : CBV
+    CD3DX12_ROOT_PARAMETER param[2];
+    param[0].InitAsConstantBufferView(0); // 0번 -> b0 : 개별 오브젝트 CBV
+    param[1].InitAsConstantBufferView(1); // 1번 -> b1 : 공용 CBV
 
     D3D12_ROOT_SIGNATURE_DESC sigDesc = CD3DX12_ROOT_SIGNATURE_DESC(_countof(param), param);
     sigDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
