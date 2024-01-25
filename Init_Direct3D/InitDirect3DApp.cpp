@@ -43,6 +43,7 @@ bool InitDirect3DApp::Initialize()
     //초기화 명령들
     BuildInputLayout();
     BuildGeometry();
+    BuildMaterials();
     BuildRenderItem();
     BuildShader();
     BuildConstantBuffer();
@@ -75,6 +76,7 @@ void InitDirect3DApp::Update(const GameTimer& gt)
     // 구면 좌표를 직교 좌표
     UpdateCamera(gt);
     UpdateObjectCB(gt);
+    UpdateMaterialCB(gt);
     UpdatePassCB(gt);
 }
 
@@ -106,6 +108,23 @@ void InitDirect3DApp::UpdateObjectCB(const GameTimer& gt)
         UINT elementIndex = item->ObjCBIndex;
         UINT elementByteSize = (sizeof(ObjectConstants) + 255) & ~255;
         memcpy(&mObjectMappedData[elementIndex * elementByteSize], &objConstants, sizeof(ObjectConstants));
+    }
+}
+
+void InitDirect3DApp::UpdateMaterialCB(const GameTimer& gt)
+{
+    for (auto& item : mMaterials)
+    {
+        MaterialInfo* mat = item.second.get();
+
+        MaterialsConstants matConstants;
+        matConstants.DiffuseAlbedo = mat->DiffuseAlbedo;
+        matConstants.FresnelR0 = mat->FresnelR0;
+        matConstants.Roughness = mat->Roughness;
+
+        UINT elementIndex = mat->MatCBIndex;
+        UINT elementByteSize = (sizeof(MaterialsConstants) + 255) & ~255;
+        memcpy(&mMaterialMappedData[elementIndex * elementByteSize], &matConstants, sizeof(matConstants));
     }
 }
 
@@ -156,7 +175,7 @@ void InitDirect3DApp::Draw(const GameTimer& gt)
 
     // 공용 상수 버퍼 바인딩
     D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = mPassCB->GetGPUVirtualAddress();
-    mCommandList->SetGraphicsRootConstantBufferView(1, passCBAddress);
+    mCommandList->SetGraphicsRootConstantBufferView(2, passCBAddress);
 
     DrawRenderItems();
 }
@@ -164,6 +183,7 @@ void InitDirect3DApp::Draw(const GameTimer& gt)
 void InitDirect3DApp::DrawRenderItems()
 {
     UINT objCBByteSize = (sizeof(ObjectConstants) + 255) & ~255;
+    UINT matCBByteSize = (sizeof(MaterialsConstants) + 255) & ~255;
     
     for (size_t i = 0; i < mRenderItems.size(); ++i)
     {
@@ -174,6 +194,12 @@ void InitDirect3DApp::DrawRenderItems()
         objCBAddress += item->ObjCBIndex * objCBByteSize;
         
         mCommandList->SetGraphicsRootConstantBufferView(0, objCBAddress);
+
+        //개별 재질 상수 버퍼 뷰 설정
+        D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = mMaterialCB->GetGPUVirtualAddress();
+        matCBAddress += item->Mat->MatCBIndex * matCBByteSize;
+
+        mCommandList->SetGraphicsRootConstantBufferView(1, matCBAddress);
 
         mCommandList->IASetVertexBuffers(0, 1, &item->Geo->VertexBufferView);
         mCommandList->IASetIndexBuffer(&item->Geo->IndexBufferView);
@@ -242,7 +268,7 @@ void InitDirect3DApp::BuildInputLayout()
     mInputLayout =
     {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+        {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
     };
 }
 
@@ -265,8 +291,7 @@ void InitDirect3DApp::BuildBoxGeometry()
     for (UINT i = 0; i < box.Vertices.size(); ++i)
     {
         vertices[i].Pos = box.Vertices[i].Position;
-        vertices[i].Color = XMFLOAT4(box.Vertices[i].Normal.x, box.Vertices[i].Normal.y, box.Vertices
-            [i].Normal.z, 1.0f);
+        vertices[i].Normal = box.Vertices[i].Normal;
     }
 
     std::vector<std::uint16_t> indices;
@@ -337,8 +362,7 @@ void InitDirect3DApp::BuildGridGeometry()
     for (UINT i = 0; i < grid.Vertices.size(); ++i)
     {
         vertices[i].Pos = grid.Vertices[i].Position;
-        vertices[i].Color = XMFLOAT4(grid.Vertices[i].Normal.x, grid.Vertices[i].Normal.y, grid.Vertices
-            [i].Normal.z, 1.0f);
+        vertices[i].Normal = grid.Vertices[i].Normal;
     }
 
     std::vector<std::uint16_t> indices;
@@ -409,8 +433,7 @@ void InitDirect3DApp::BuildSphereGeometry()
     for (UINT i = 0; i < sphere.Vertices.size(); ++i)
     {
         vertices[i].Pos = sphere.Vertices[i].Position;
-        vertices[i].Color = XMFLOAT4(sphere.Vertices[i].Normal.x, sphere.Vertices[i].Normal.y, sphere.Vertices
-            [i].Normal.z, 1.0f);
+        vertices[i].Normal = sphere.Vertices[i].Normal;
     }
 
     std::vector<std::uint16_t> indices;
@@ -480,8 +503,7 @@ void InitDirect3DApp::BuildCylinderGeometry()
     for (UINT i = 0; i < cylinder.Vertices.size(); ++i)
     {
         vertices[i].Pos = cylinder.Vertices[i].Position;
-        vertices[i].Color = XMFLOAT4(cylinder.Vertices[i].Normal.x, cylinder.Vertices[i].Normal.y, cylinder.Vertices
-            [i].Normal.z, 1.0f);
+        vertices[i].Normal = cylinder.Vertices[i].Normal;
     }
 
     std::vector<std::uint16_t> indices;
@@ -562,7 +584,7 @@ void InitDirect3DApp::BuildSkullGeometry()
     for (UINT i = 0; i < vCount; ++i)
     {
         fin >> vertices[i].Pos.x >> vertices[i].Pos.y >> vertices[i].Pos.z;
-        fin >> vertices[i].Color.x >> vertices[i].Color.y >> vertices[i].Color.z;
+        fin >> vertices[i].Normal.x >> vertices[i].Normal.y >> vertices[i].Normal.z;
     }
 
     fin >> ignore;
@@ -631,12 +653,52 @@ void InitDirect3DApp::BuildSkullGeometry()
     fin.close();
 }
 
+void InitDirect3DApp::BuildMaterials()
+{
+    UINT indexCount = 0;
+
+    auto green = std::make_unique<MaterialInfo>();
+    green->Name = "Green";
+    green->MatCBIndex = indexCount++;
+    green->DiffuseAlbedo = XMFLOAT4(Colors::ForestGreen);
+    green->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
+    green->Roughness = 0.1f;
+    mMaterials[green->Name] = std::move(green);
+
+    auto blue = std::make_unique<MaterialInfo>();
+    blue->Name = "Blue";
+    blue->MatCBIndex = indexCount++;
+    blue->DiffuseAlbedo = XMFLOAT4(Colors::LightSteelBlue);
+    blue->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
+    blue->Roughness = 0.3f;
+    mMaterials[blue->Name] = std::move(blue);
+
+
+    auto gray = std::make_unique<MaterialInfo>();
+    gray->Name = "Gray";
+    gray->MatCBIndex = indexCount++;
+    gray->DiffuseAlbedo = XMFLOAT4(Colors::LightGray);
+    gray->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
+    gray->Roughness = 0.2f;
+    mMaterials[gray->Name] = std::move(gray);
+
+
+    auto skull = std::make_unique<MaterialInfo>();
+    skull->Name = "Skull";
+    skull->MatCBIndex = indexCount++;
+    skull->DiffuseAlbedo = XMFLOAT4(Colors::White);
+    skull->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
+    skull->Roughness = 0.3f;
+    mMaterials[skull->Name] = std::move(skull);
+}
+
 void InitDirect3DApp::BuildRenderItem()
 {
     auto gridItem = std::make_unique<RenderItem>();
     gridItem->ObjCBIndex = 0;
     gridItem->World = MathHelper::Identity4x4();
     gridItem->Geo = mGeoMetries["Grid"].get();
+    gridItem->Mat = mMaterials["Gray"].get();
     gridItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
     gridItem->IndexCount = gridItem->Geo->IndexCount;
     mRenderItems.push_back(std::move(gridItem));
@@ -645,6 +707,7 @@ void InitDirect3DApp::BuildRenderItem()
     boxItem->ObjCBIndex = 1;
     XMStoreFloat4x4(&boxItem->World, XMMatrixScaling(2.0f, 2.0f, 2.0f) * XMMatrixTranslation(0.0f, 0.5f, 0.0f));
     boxItem->Geo = mGeoMetries["Box"].get();
+    boxItem->Mat = mMaterials["Blue"].get();
     boxItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
     boxItem->IndexCount = boxItem->Geo->IndexCount;
     mRenderItems.push_back(std::move(boxItem));
@@ -654,6 +717,7 @@ void InitDirect3DApp::BuildRenderItem()
     skullItem->ObjCBIndex = 2;
     XMStoreFloat4x4(&skullItem->World, XMMatrixScaling(0.5f, 0.5f, 0.5f) * XMMatrixTranslation(0.0f, 1.f, 0.0f));
     skullItem->Geo = mGeoMetries["Skull"].get();
+    skullItem->Mat = mMaterials["Skull"].get();
     skullItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
     skullItem->IndexCount = skullItem->Geo->IndexCount;
     mRenderItems.push_back(std::move(skullItem));
@@ -676,6 +740,7 @@ void InitDirect3DApp::BuildRenderItem()
         XMStoreFloat4x4(&leftCylItem->World, leftCylWorld);
         leftCylItem->ObjCBIndex = objCBIndex++;
         leftCylItem->Geo = mGeoMetries["Cylinder"].get();
+        leftCylItem->Mat = mMaterials["Green"].get();
         leftCylItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
         leftCylItem->IndexCount = leftCylItem->Geo->IndexCount;
         mRenderItems.push_back(std::move(leftCylItem));
@@ -684,6 +749,7 @@ void InitDirect3DApp::BuildRenderItem()
         XMStoreFloat4x4(&rightCylItem->World, rightCylWorld);
         rightCylItem->ObjCBIndex = objCBIndex++;
         rightCylItem->Geo = mGeoMetries["Cylinder"].get();
+        rightCylItem->Mat = mMaterials["Green"].get();
         rightCylItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
         rightCylItem->IndexCount = rightCylItem->Geo->IndexCount;
         mRenderItems.push_back(std::move(rightCylItem));
@@ -692,6 +758,7 @@ void InitDirect3DApp::BuildRenderItem()
         XMStoreFloat4x4(&leftsphereItem->World, leftsphereWorld);
         leftsphereItem->ObjCBIndex = objCBIndex++;
         leftsphereItem->Geo = mGeoMetries["Sphere"].get();
+        leftsphereItem->Mat = mMaterials["Blue"].get();
         leftsphereItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
         leftsphereItem->IndexCount = leftsphereItem->Geo->IndexCount;
         mRenderItems.push_back(std::move(leftsphereItem));
@@ -700,6 +767,7 @@ void InitDirect3DApp::BuildRenderItem()
         XMStoreFloat4x4(&rightsphereItem->World, rightsphereWorld);
         rightsphereItem->ObjCBIndex = objCBIndex++;
         rightsphereItem->Geo = mGeoMetries["Sphere"].get();
+        rightsphereItem->Mat = mMaterials["Blue"].get();
         rightsphereItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
         rightsphereItem->IndexCount = rightsphereItem->Geo->IndexCount;
         mRenderItems.push_back(std::move(rightsphereItem));
@@ -733,6 +801,23 @@ void InitDirect3DApp::BuildConstantBuffer()
 
     mObjectCB->Map(0, nullptr, reinterpret_cast<void**>(&mObjectMappedData));
 
+    // 개별 재질 상수 버퍼
+    size = sizeof(MaterialsConstants);
+    mMaterialByteSize = ((size + 255) & ~255) * mMaterials.size();
+
+    heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    desc = CD3DX12_RESOURCE_DESC::Buffer(mMaterialByteSize);
+
+    md3dDevice->CreateCommittedResource(
+        &heapProperty,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&mMaterialCB));
+
+    mMaterialCB->Map(0, nullptr, reinterpret_cast<void**>(&mMaterialMappedData));
+
     // 공용 상수 버퍼
     size = sizeof(PassConstants);
     mPassByteSize = ((size + 255) & ~255);
@@ -752,9 +837,10 @@ void InitDirect3DApp::BuildConstantBuffer()
 
 void InitDirect3DApp::BuildRootSignature()
 {
-    CD3DX12_ROOT_PARAMETER param[2];
+    CD3DX12_ROOT_PARAMETER param[3];
     param[0].InitAsConstantBufferView(0); // 0번 -> b0 : 개별 오브젝트 CBV
-    param[1].InitAsConstantBufferView(1); // 1번 -> b1 : 공용 CBV
+    param[1].InitAsConstantBufferView(1); // 1번 -> b1 : 개별 재질 CBV
+    param[2].InitAsConstantBufferView(2); // 2번 -> b2 : 공용 CBV
 
     D3D12_ROOT_SIGNATURE_DESC sigDesc = CD3DX12_ROOT_SIGNATURE_DESC(_countof(param), param);
     sigDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;

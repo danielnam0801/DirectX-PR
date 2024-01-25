@@ -10,13 +10,21 @@ using namespace DirectX;
 struct Vertex
 {
 	XMFLOAT3 Pos;
-	XMFLOAT4 Color;
+	XMFLOAT3 Normal;
 };
 
 // 개별 오브젝트 상수 버퍼
 struct ObjectConstants
 {
 	XMFLOAT4X4 World = MathHelper::Identity4x4();
+};
+
+// 개별 재질 상수 버퍼
+struct MaterialsConstants
+{
+	XMFLOAT4 DiffuseAlbedo = { 1.0f, 1.0f, 1.0f, 1.0f };
+	XMFLOAT3 FresnelR0 = { 0.01f, 0.01f, 0.01f };
+	float Roughness = 0.25f;
 };
 
 // 공용 상수 버퍼
@@ -49,6 +57,21 @@ struct GeometryInfo
 	int IndexCount = 0;
 };
 
+//재질 정보
+struct MaterialInfo
+{
+	std::string Name;
+
+	int MatCBIndex = -1;
+	int DiffuseSrvHeapIndex = -1;
+	int Texture_On = 0;
+
+	XMFLOAT4 DiffuseAlbedo = { 1.0f, 1.0f, 1.0f, 1.0f };
+	XMFLOAT3 FresnelR0 = { 0.01f, 0.01f, 0.01f };
+	float Roughness = 0.25f;
+
+};
+
 //렌더링할 오브젝트 구조체
 struct RenderItem
 {
@@ -60,7 +83,8 @@ struct RenderItem
 	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	
 	GeometryInfo* Geo = nullptr;
-	
+	MaterialInfo* Mat = nullptr;
+
 	int IndexCount = 0;
 };
 
@@ -77,7 +101,9 @@ private:
 	virtual void Update(const GameTimer& gt)override;
 	void UpdateCamera(const GameTimer& gt);
 	void UpdateObjectCB(const GameTimer& gt);
+	void UpdateMaterialCB(const GameTimer& gt);
 	void UpdatePassCB(const GameTimer& gt);
+
 	virtual void DrawBegin(const GameTimer& gt)override;
 	virtual void Draw(const GameTimer& gt)override;
 	void DrawRenderItems();
@@ -94,6 +120,7 @@ private:
 	void BuildSphereGeometry();
 	void BuildCylinderGeometry();
 	void BuildSkullGeometry();
+	void BuildMaterials();
 	void BuildRenderItem();
 	void BuildShader();
 	void BuildConstantBuffer();
@@ -114,10 +141,15 @@ private:
 	ComPtr<ID3DBlob> mVSByteCode = nullptr;
 	ComPtr<ID3DBlob> mPSByteCode = nullptr;
 
-	//오브젝트 상수 버퍼
+	// 개별 오브젝트 상수 버퍼
 	ComPtr<ID3D12Resource> mObjectCB = nullptr;
 	BYTE* mObjectMappedData = nullptr;
 	UINT mObjectByteSize = 0;
+
+	// 재질 오브젝트 상수 버퍼
+	ComPtr<ID3D12Resource> mMaterialCB = nullptr;
+	BYTE* mMaterialMappedData = nullptr;
+	UINT mMaterialByteSize = 0;
 
 	//공용 상수 버퍼
 	ComPtr<ID3D12Resource> mPassCB = nullptr;
@@ -126,6 +158,9 @@ private:
 
 	// 기하 구조 맵
 	std::unordered_map<std::string, std::unique_ptr<GeometryInfo>> mGeoMetries;
+
+	// 기하 구조 맵
+	std::unordered_map<std::string, std::unique_ptr<MaterialInfo>> mMaterials;
 
 	//렌더링할 오브젝트 리스트
 	std::vector<std::unique_ptr<RenderItem>> mRenderItems;
