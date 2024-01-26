@@ -82,12 +82,12 @@ void InitDirect3DApp::Update(const GameTimer& gt)
 
 void InitDirect3DApp::UpdateCamera(const GameTimer& gt)
 {
-    float x = mRadius * sinf(mPhi) * cosf(mTheta);
-    float z = mRadius * sinf(mPhi) * sinf(mTheta);
-    float y = mRadius * cosf(mPhi);
+    mEyePos.x = mRadius * sinf(mPhi) * cosf(mTheta);
+    mEyePos.z = mRadius * sinf(mPhi) * sinf(mTheta);
+    mEyePos.y = mRadius * cosf(mPhi);
 
     // 시야 행렬
-    XMVECTOR pos = XMVectorSet(x, y, z, 1.0f);
+    XMVECTOR pos = XMVectorSet(mEyePos.x, mEyePos.y, mEyePos.z, 1.0f);
     XMVECTOR target = XMVectorZero();
     XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 
@@ -144,6 +144,32 @@ void InitDirect3DApp::UpdatePassCB(const GameTimer& gt)
     XMStoreFloat4x4(&mainPass.InvProj, XMMatrixTranspose(invProj));
     XMStoreFloat4x4(&mainPass.ViewProj, XMMatrixTranspose(viewProj));
    
+    mainPass.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.0f };
+    mainPass.EyePosW = mEyePos;
+    mainPass.LightCount = 11;
+
+    mainPass.Lights[0].LightType = 0;
+    mainPass.Lights[0].Direction = { 0.57735f, -0.57735f, 0.57735f };
+    mainPass.Lights[0].Strength = { 0.6f, 0.6f, 0.6f };
+    
+    for (int i = 0; i < 5; ++i)
+    {
+        mainPass.Lights[1 + i].LightType = 1;
+        mainPass.Lights[1 + i].Strength = {0.6f,0.6f,0.6f};
+        mainPass.Lights[1 + i].Position = XMFLOAT3(-5.0f, 3.5f, -10.0f + i * 5.0f);
+        mainPass.Lights[1 + i].FalloffStart = 2;
+        mainPass.Lights[1 + i].FalloffEnd = 5;
+    }
+
+    for (int i = 0; i < 5; ++i)
+    {
+        mainPass.Lights[6 + i].LightType = 1;
+        mainPass.Lights[6 + i].Strength = { 0.6f,0.6f,0.6f };
+        mainPass.Lights[6 + i].Position = XMFLOAT3(+5.0f, 3.5f, -10.0f + i * 5.0f);
+        mainPass.Lights[6 + i].FalloffStart = 2;
+        mainPass.Lights[6 + i].FalloffEnd = 5;
+    }
+
     memcpy(&mPassMappedData[0], &mainPass, sizeof(PassConstants));
 }
 

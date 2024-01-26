@@ -64,5 +64,11 @@
     <None Include="Color.hlsl">
       <Filter>세이더 파일</Filter>
     </None>
+    <None Include="Params.hlsl">
+      <Filter>세이더 파일</Filter>
+    </None>
+    <None Include="LightingUtil.hlsl">
+      <Filter>세이더 파일</Filter>
+    </None>
   </ItemGroup>
 </Project>

@@ -6,6 +6,8 @@
 #include "../Common/GeometryGenerator.h"
 using namespace DirectX;
 
+#define MAX_LIGHTS 16
+
 //정점 정보
 struct Vertex
 {
@@ -27,6 +29,19 @@ struct MaterialsConstants
 	float Roughness = 0.25f;
 };
 
+//라이팅 정보
+struct LightInfo
+{
+	UINT LightType = 0;
+	XMFLOAT3 padding = { 0.0f, 0.0f, 0.0f };
+	XMFLOAT3 Strength = { 0.5f,  0.5f, 0.5f };
+	float FalloffStart = 1.0f;						//point / spot
+	XMFLOAT3 Direction = { 0.0f, -1.0f, 0.0f };		//direction / spot
+	float FalloffEnd = 10.0f;						//point / spot
+	XMFLOAT3 Position = { 0.0f, 0.0f, 0.0f };		//point / spot
+	float SpotPower = 64.0f;						//spot
+};
+
 // 공용 상수 버퍼
 struct PassConstants
 {
@@ -35,6 +50,10 @@ struct PassConstants
 	XMFLOAT4X4 Proj = MathHelper::Identity4x4();
 	XMFLOAT4X4 InvProj = MathHelper::Identity4x4();
 	XMFLOAT4X4 ViewProj = MathHelper::Identity4x4();
+	XMFLOAT4 AmbientLight = { 0.0f, 0.0f, 0.0f, 1.0f };
+	XMFLOAT3 EyePosW = { 0.0f, 0.0f, 0.0f };
+	UINT LightCount;
+	LightInfo Lights[MAX_LIGHTS];
 };
 
 // 기하도형 정보
@@ -170,6 +189,9 @@ private:
 	XMFLOAT4X4 mView = MathHelper::Identity4x4();
 	XMFLOAT4X4 mProj = MathHelper::Identity4x4();
 
+	//시야 위치
+	XMFLOAT3 mEyePos = { 0.0f, 0.0f, 0.0f };
+		
 	//구면 좌표 제어 값
 	float mTheta = 1.5f * XM_PI;
 	float mPhi = XM_PIDIV4;

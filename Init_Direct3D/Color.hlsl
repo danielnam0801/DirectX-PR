@@ -1,24 +1,8 @@
-cbuffer cbPerObject : register(b0)
-{
-	float4x4 gWorld;
-};
+#ifndef _COLOR_HLSL_
+#define _COLOR_HLSL_
 
-cbuffer cbMaterial : register(b1)
-{
-	float4 gDiffuseAlbedo;
-	float3 gFresnelR0;
-	float gRoughness;
-}
-
-cbuffer cbPass : register(b2)
-{
-	float4x4 gView;
-	float4x4 gInvView;
-	float4x4 gProj;
-	float4x4 gInvProj;
-	float4x4 gViewProj;
-};
-
+#include "Params.hlsl"
+#include "LightingUtil.hlsl"
 
 struct VertexIn
 {
@@ -47,5 +31,20 @@ VertexOut VS(VertexIn vin)
 float4 PS(VertexOut pin) : SV_Target
 {
 	pin.NormalW = normalize(pin.NormalW);
-	return float4(pin.NormalW, 1.0f);
+	float3 toEyeW = normalize(gEyePosW - pin.PosW);
+	
+	float4 ambient = gAmbientLight * gDiffuseAlbedo;
+
+	const float shininess = 1.0f - gRoughness;
+	Material mat = { gDiffuseAlbedo, gFresnelR0, shininess };
+
+	float4 directLight = ComputeLighting(gLights, gLightCount, mat, pin.PosW, pin.NormalW, toEyeW);
+	//float4 pointLight = ComputePointLight(gLights[2], mat, pin.PosW, pin.NormalW, toEyeW);
+	
+	float4 litColor = ambient + directLight;
+	litColor.a = gDiffuseAlbedo.a;
+
+	return litColor;
 }
+
+#endif
