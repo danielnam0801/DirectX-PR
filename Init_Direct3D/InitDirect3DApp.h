@@ -22,6 +22,7 @@ struct Vertex
 struct ObjectConstants
 {
 	XMFLOAT4X4 World = MathHelper::Identity4x4();
+	XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
 };
 
 // 개별 재질 상수 버퍼
@@ -117,6 +118,7 @@ struct RenderItem
 	UINT ObjCBIndex = -1;
 
 	XMFLOAT4X4 World = MathHelper::Identity4x4();
+	XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
 	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	
 	GeometryInfo* Geo = nullptr;

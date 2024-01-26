@@ -103,9 +103,11 @@ void InitDirect3DApp::UpdateObjectCB(const GameTimer& gt)
     for (auto& item : mRenderItems)
     {
         XMMATRIX world = XMLoadFloat4x4(&item->World);
+        XMMATRIX texTransform = XMLoadFloat4x4(&item->TexTransform);
 
         ObjectConstants objConstants;
         XMStoreFloat4x4(&objConstants.World, XMMatrixTranspose(world));
+        XMStoreFloat4x4(&objConstants.TexTransform, XMMatrixTranspose(texTransform));
         
         UINT elementIndex = item->ObjCBIndex;
         UINT elementByteSize = (sizeof(ObjectConstants) + 255) & ~255;
@@ -813,6 +815,7 @@ void InitDirect3DApp::BuildRenderItem()
     auto gridItem = std::make_unique<RenderItem>();
     gridItem->ObjCBIndex = 0;
     gridItem->World = MathHelper::Identity4x4();
+    XMStoreFloat4x4(&gridItem->TexTransform, XMMatrixScaling(8.0f, 8.0f, 8.0f));
     gridItem->Geo = mGeoMetries["Grid"].get();
     gridItem->Mat = mMaterials["Tile"].get();
     gridItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
@@ -822,6 +825,7 @@ void InitDirect3DApp::BuildRenderItem()
     auto boxItem = std::make_unique<RenderItem>();
     boxItem->ObjCBIndex = 1;
     XMStoreFloat4x4(&boxItem->World, XMMatrixScaling(2.0f, 2.0f, 2.0f) * XMMatrixTranslation(0.0f, 0.5f, 0.0f));
+    XMStoreFloat4x4(&boxItem->TexTransform, XMMatrixScaling(1.0f, 1.0f, 1.0f));
     boxItem->Geo = mGeoMetries["Box"].get();
     boxItem->Mat = mMaterials["Bricks"].get();
     boxItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
@@ -832,6 +836,7 @@ void InitDirect3DApp::BuildRenderItem()
     auto skullItem = std::make_unique<RenderItem>();
     skullItem->ObjCBIndex = 2;
     XMStoreFloat4x4(&skullItem->World, XMMatrixScaling(0.5f, 0.5f, 0.5f) * XMMatrixTranslation(0.0f, 1.f, 0.0f));
+    XMStoreFloat4x4(&skullItem->TexTransform, XMMatrixScaling(1.f, 1.f, 1.f));
     skullItem->Geo = mGeoMetries["Skull"].get();
     skullItem->Mat = mMaterials["Skull"].get();
     skullItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
@@ -854,6 +859,7 @@ void InitDirect3DApp::BuildRenderItem()
 
         //왼쪽 실린더
         XMStoreFloat4x4(&leftCylItem->World, leftCylWorld);
+        XMStoreFloat4x4(&leftCylItem->TexTransform, XMMatrixScaling(1.f, 1.f, 1.f));
         leftCylItem->ObjCBIndex = objCBIndex++;
         leftCylItem->Geo = mGeoMetries["Cylinder"].get();
         leftCylItem->Mat = mMaterials["Bricks"].get();
@@ -863,6 +869,7 @@ void InitDirect3DApp::BuildRenderItem()
 
         //오른쪽 실린더
         XMStoreFloat4x4(&rightCylItem->World, rightCylWorld);
+        XMStoreFloat4x4(&rightCylItem->TexTransform, XMMatrixScaling(1.f, 1.f, 1.f));
         rightCylItem->ObjCBIndex = objCBIndex++;
         rightCylItem->Geo = mGeoMetries["Cylinder"].get();
         rightCylItem->Mat = mMaterials["Bricks"].get();
@@ -872,6 +879,7 @@ void InitDirect3DApp::BuildRenderItem()
 
         //왼쪽 스피어
         XMStoreFloat4x4(&leftsphereItem->World, leftsphereWorld);
+        XMStoreFloat4x4(&leftsphereItem->TexTransform, XMMatrixScaling(1.f, 1.f, 1.f));
         leftsphereItem->ObjCBIndex = objCBIndex++;
         leftsphereItem->Geo = mGeoMetries["Sphere"].get();
         leftsphereItem->Mat = mMaterials["Stone"].get();
@@ -881,6 +889,7 @@ void InitDirect3DApp::BuildRenderItem()
 
         //오른쪽 스피어
         XMStoreFloat4x4(&rightsphereItem->World, rightsphereWorld);
+        XMStoreFloat4x4(&rightsphereItem->TexTransform, XMMatrixScaling(1.f, 1.f, 1.f));
         rightsphereItem->ObjCBIndex = objCBIndex++;
         rightsphereItem->Geo = mGeoMetries["Sphere"].get();
         rightsphereItem->Mat = mMaterials["Stone"].get();

@@ -26,8 +26,12 @@ VertexOut VS(VertexIn vin)
 	float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
 	vout.PosW = posW.xyz;
 	vout.PosH = mul(posW, gViewProj);
+	
 	vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);
-	vout.Uv = vin.Uv;
+	
+	float4 Uv = mul(float4(vin.Uv, 0.0f, 1.0f), gTexTransform);
+	vout.Uv = Uv.xy;
+	
 	return vout;
 }
 
