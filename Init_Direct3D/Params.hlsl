@@ -32,6 +32,8 @@ cbuffer cbMaterial : register(b1)
 	float4 gDiffuseAlbedo;
 	float3 gFresnelR0;
 	float gRoughness;
+	int gTexture_On;
+	float3 gTexturePadding;
 }
 
 cbuffer cbPass : register(b2)
@@ -47,6 +49,10 @@ cbuffer cbPass : register(b2)
 	int gLightCount;
 	Light gLights[MAXLIGHTS];
 };
+
+Texture2D gTexture_0 : register(t0);
+
+SamplerState gSampler_0 : register(s0);
 
 
 #endif

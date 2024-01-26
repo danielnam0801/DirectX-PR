@@ -4,6 +4,8 @@
 #include <DirectXColors.h>
 #include "../Common/MathHelper.h"
 #include "../Common/GeometryGenerator.h"
+#include "../Common/DDSTextureLoader.h"
+
 using namespace DirectX;
 
 #define MAX_LIGHTS 16
@@ -13,6 +15,7 @@ struct Vertex
 {
 	XMFLOAT3 Pos;
 	XMFLOAT3 Normal;
+	XMFLOAT2 Uv;
 };
 
 // 개별 오브젝트 상수 버퍼
@@ -22,11 +25,13 @@ struct ObjectConstants
 };
 
 // 개별 재질 상수 버퍼
-struct MaterialsConstants
+struct MatConstants
 {
 	XMFLOAT4 DiffuseAlbedo = { 1.0f, 1.0f, 1.0f, 1.0f };
 	XMFLOAT3 FresnelR0 = { 0.01f, 0.01f, 0.01f };
 	float Roughness = 0.25f;
+	UINT Texture_On = 0;
+	XMFLOAT3 padding = { 0.0f, 0.0f, 0.0f };
 };
 
 //라이팅 정보
@@ -75,6 +80,19 @@ struct GeometryInfo
 	//인덱스 갯수
 	int IndexCount = 0;
 };
+
+// 텍스처 정보
+struct TextureInfo
+{
+	std::string Name;
+	std::wstring Filename;
+
+	int DiffuseSrvHeapIndex = -1;
+
+	ComPtr<ID3D12Resource> Resource = nullptr;
+	ComPtr<ID3D12Resource> UploadHeap = nullptr;
+};
+
 
 //재질 정보
 struct MaterialInfo
@@ -139,10 +157,12 @@ private:
 	void BuildSphereGeometry();
 	void BuildCylinderGeometry();
 	void BuildSkullGeometry();
+	void BuildTextures();
 	void BuildMaterials();
 	void BuildRenderItem();
 	void BuildShader();
 	void BuildConstantBuffer();
+	void BuildDescriptorHeaps();
 	void BuildRootSignature();
 	void BuildPSO();
 
@@ -175,11 +195,17 @@ private:
 	BYTE* mPassMappedData = nullptr;
 	UINT mPassByteSize = 0;
 
+	//서술자 힙
+	ComPtr<ID3D12DescriptorHeap> mSrvDescriptorHeap = nullptr;
+
 	// 기하 구조 맵
 	std::unordered_map<std::string, std::unique_ptr<GeometryInfo>> mGeoMetries;
 
-	// 기하 구조 맵
+	// 재질 맵
 	std::unordered_map<std::string, std::unique_ptr<MaterialInfo>> mMaterials;
+
+	//텍스처 맵
+	std::unordered_map<std::string, std::unique_ptr<TextureInfo>> mTextures;
 
 	//렌더링할 오브젝트 리스트
 	std::vector<std::unique_ptr<RenderItem>> mRenderItems;
