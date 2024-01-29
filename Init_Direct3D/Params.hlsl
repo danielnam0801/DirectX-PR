@@ -49,9 +49,16 @@ cbuffer cbPass : register(b2)
 	float3 gEyePosW;
 	int gLightCount;
 	Light gLights[MAXLIGHTS];
+
+	float4 gFogColor;
+	float gFogStart;
+	float gFogRange;
+	float2 fogpadding;
 };
 
-Texture2D gTexture_0 : register(t0);
+TextureCube gCubeMap : register(t0);
+
+Texture2D gTexture_0 : register(t1);
 
 SamplerState gSampler_0 : register(s0);
 

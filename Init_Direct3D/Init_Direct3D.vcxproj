@@ -141,6 +141,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\Common\Camera.h" />
     <ClInclude Include="..\Common\d3dUtil.h" />
     <ClInclude Include="..\Common\d3dx12.h" />
     <ClInclude Include="..\Common\DDSTextureLoader.h" />
@@ -151,6 +152,7 @@
     <ClInclude Include="InitDirect3DApp.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\Common\Camera.cpp" />
     <ClCompile Include="..\Common\d3dUtil.cpp" />
     <ClCompile Include="..\Common\DDSTextureLoader.cpp" />
     <ClCompile Include="..\Common\GameTimer.cpp" />
@@ -171,6 +173,11 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="LightingUtil.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Skybox.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>

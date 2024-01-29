@@ -43,20 +43,37 @@ float4 PS(VertexOut pin) : SV_Target
 	{
 		diffuseAlbedo = gTexture_0.Sample(gSampler_0, pin.Uv) * gDiffuseAlbedo;
 	}
+
+#ifdef ALPHA_TEST
+	clip(diffuseAlbedo.a - 0.1f);
+#endif
+
 	pin.NormalW = normalize(pin.NormalW);
 	float3 toEyeW = normalize(gEyePosW - pin.PosW);
-	
+
 	float4 ambient = gAmbientLight * diffuseAlbedo;
 
 	const float shininess = 1.0f - gRoughness;
 	Material mat = { diffuseAlbedo, gFresnelR0, shininess };
 
 	float4 directLight = ComputeLighting(gLights, gLightCount, mat, pin.PosW, pin.NormalW, toEyeW);
-	
+
 	float4 litColor = ambient + directLight;
+
+	float3 r = reflect(-toEyeW, pin.NormalW);
+	float4 reflectColor = gCubeMap.Sample(gSampler_0, r);
+	float3 fresnelFactor = SchlickFresnel(gFresnelR0, pin.NormalW, r);
+	litColor.rgb += shininess * fresnelFactor * reflectColor.rgb;
+
+#ifdef FOG
+	float distToEye = length(gEyePosW - pin.PosW);
+
+	float fogAmount = saturate((distToEye - gFogStart) / gFogRange);
+	litColor = lerp(litColor, gFogColor, fogAmount);
+#endif
+
 	litColor.a = diffuseAlbedo.a;
 
 	return litColor;
 }
-
 #endif

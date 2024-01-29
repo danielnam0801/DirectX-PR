@@ -2,6 +2,7 @@
 
 #include "D3dApp.h"
 #include <DirectXColors.h>
+#include "../Common/Camera.h"
 #include "../Common/MathHelper.h"
 #include "../Common/GeometryGenerator.h"
 #include "../Common/DDSTextureLoader.h"
@@ -10,6 +11,15 @@ using namespace DirectX;
 
 #define MAX_LIGHTS 16
 
+//렌더링 레이어
+enum class RenderLayer : int
+{
+	Opaque = 0,
+	Transparent,
+	AlphaTested,
+	SKybox,
+	Count
+};
 //정점 정보
 struct Vertex
 {
@@ -56,10 +66,17 @@ struct PassConstants
 	XMFLOAT4X4 Proj = MathHelper::Identity4x4();
 	XMFLOAT4X4 InvProj = MathHelper::Identity4x4();
 	XMFLOAT4X4 ViewProj = MathHelper::Identity4x4();
+	
 	XMFLOAT4 AmbientLight = { 0.0f, 0.0f, 0.0f, 1.0f };
 	XMFLOAT3 EyePosW = { 0.0f, 0.0f, 0.0f };
 	UINT LightCount;
 	LightInfo Lights[MAX_LIGHTS];
+
+	XMFLOAT4 FogColor = { 0.7f, 0.7f, 0.7f, 1.0f };
+	float FogStart = 5.0f;
+	float FogRange = 150.f;
+	XMFLOAT2 padding;
+
 };
 
 // 기하도형 정보
@@ -145,7 +162,7 @@ private:
 
 	virtual void DrawBegin(const GameTimer& gt)override;
 	virtual void Draw(const GameTimer& gt)override;
-	void DrawRenderItems();
+	void DrawRenderItems(const std::vector<RenderItem*>& ritems);
 	virtual void DrawEnd(const GameTimer& gt)override;
 
 	virtual void OnMouseDown(WPARAM btnState, int x, int y) override;
@@ -175,12 +192,11 @@ private:
 	//루트 시그니처
 	ComPtr<ID3D12RootSignature>				mRootSignature = nullptr;
 
-	//파이프라인 상태 객체
-	ComPtr<ID3D12PipelineState>				mPSO = nullptr;
-
-	// 정점 쉐이더와 픽셀 쉐이더 변수
-	ComPtr<ID3DBlob> mVSByteCode = nullptr;
-	ComPtr<ID3DBlob> mPSByteCode = nullptr;
+	//쉐이더 맵
+	std::unordered_map<std::string, ComPtr<ID3DBlob>> mShaders;
+	
+	//렌더링 파이프라인 상태 맵
+	std::unordered_map<std::string, ComPtr<ID3D12PipelineState>> mPSOs;
 
 	// 개별 오브젝트 상수 버퍼
 	ComPtr<ID3D12Resource> mObjectCB = nullptr;
@@ -197,6 +213,9 @@ private:
 	BYTE* mPassMappedData = nullptr;
 	UINT mPassByteSize = 0;
 
+	// 스카이박스 텍스처 서술자 힙 인덱스
+	UINT mSkyTesHeapIndex = -1;
+
 	//서술자 힙
 	ComPtr<ID3D12DescriptorHeap> mSrvDescriptorHeap = nullptr;
 
@@ -212,18 +231,13 @@ private:
 	//렌더링할 오브젝트 리스트
 	std::vector<std::unique_ptr<RenderItem>> mRenderItems;
 
-	//월드  / 시야 / 투영 행렬
-	XMFLOAT4X4 mWorld = MathHelper::Identity4x4();
-	XMFLOAT4X4 mView = MathHelper::Identity4x4();
-	XMFLOAT4X4 mProj = MathHelper::Identity4x4();
+	// 렌더링할 오브젝트 나누기 : PSO
+	std::vector<RenderItem*> mRenderItemLayer[(int)RenderLayer::Count];
+	
+	//카메라 클래스
+	Camera mCamera;
 
-	//시야 위치
-	XMFLOAT3 mEyePos = { 0.0f, 0.0f, 0.0f };
-		
-	//구면 좌표 제어 값
-	float mTheta = 1.5f * XM_PI;
-	float mPhi = XM_PIDIV4;
-	float mRadius = 5.0f;
+	float mCameraSpeed = 10.0f;
 
 	//마우스 좌표
 	POINT mLastMovesePos = { 0,0 };
