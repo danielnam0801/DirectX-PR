@@ -34,8 +34,9 @@ cbuffer cbMaterial : register(b1)
 	float3 gFresnelR0;
 	float gRoughness;
 	int gTexture_On;
-	float3 gTexturePadding;
-}
+	int gNormal_On;
+	float2 gTexturePadding;
+};
 
 cbuffer cbPass : register(b2)
 {
@@ -59,8 +60,25 @@ cbuffer cbPass : register(b2)
 TextureCube gCubeMap : register(t0);
 
 Texture2D gTexture_0 : register(t1);
+Texture2D gNormal_0 : register(t2);
 
 SamplerState gSampler_0 : register(s0);
 
+// normal map sample to world space
+float3 NormalSampleToWorldSpace(float3 normalMapSample, float3 unitNormalW, float3 tangentW)
+{
+	// 0, 1 -> -1, 1
+	float3 normalT = 2.0f * normalMapSample - 1.0f;
+
+	float3 N = unitNormalW;
+	float3 T = normalize(tangentW - dot(tangentW, N) * N);
+	float3 B = cross(N, T);
+
+	float3x3 TBN = float3x3(T, B, N);
+
+	float3 bumpedNormalW = mul(normalT, TBN);
+
+	return bumpedNormalW;
+}
 
 #endif

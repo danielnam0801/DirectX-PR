@@ -131,7 +131,8 @@ void InitDirect3DApp::UpdateMaterialCB(const GameTimer& gt)
         matConstants.DiffuseAlbedo = mat->DiffuseAlbedo;
         matConstants.FresnelR0 = mat->FresnelR0;
         matConstants.Roughness = mat->Roughness;
-        matConstants.Texture_On = mat->Texture_On;
+        matConstants.Texture_On = (mat->DiffuseSrvHeapIndex == -1) ? 0 : 1;
+        matConstants.Normal_On = (mat->NormalSrvHeapIndex == -1) ? 0 : 1;
 
         UINT elementIndex = mat->MatCBIndex;
         UINT elementByteSize = (sizeof(MatConstants) + 255) & ~255;
@@ -265,11 +266,21 @@ void InitDirect3DApp::DrawRenderItems(const std::vector<RenderItem*>& ritems)
             mCommandList->SetGraphicsRootDescriptorTable(4, tex);
         }
 
+        // normal텍스처 버퍼 서술자 뷰 설정
+        CD3DX12_GPU_DESCRIPTOR_HANDLE normal(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+        normal.Offset(item->Mat->NormalSrvHeapIndex, mCbvSrvUavDescriptorSize);
+
+        if (item->Mat->NormalSrvHeapIndex != -1)
+        {
+            mCommandList->SetGraphicsRootDescriptorTable(5, normal);
+        }
+
         mCommandList->IASetVertexBuffers(0, 1, &item->Geo->VertexBufferView);
         mCommandList->IASetIndexBuffer(&item->Geo->IndexBufferView);
         mCommandList->IASetPrimitiveTopology(item->PrimitiveType);
 
         mCommandList->DrawIndexedInstanced(item->Geo->IndexCount, 1, 0, 0, 0);
+
     }
 
 }
@@ -324,7 +335,8 @@ void InitDirect3DApp::BuildInputLayout()
     {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
     };
 }
 
@@ -349,6 +361,7 @@ void InitDirect3DApp::BuildBoxGeometry()
         vertices[i].Pos = box.Vertices[i].Position;
         vertices[i].Normal = box.Vertices[i].Normal;
         vertices[i].Uv = box.Vertices[i].TexC;
+        vertices[i].Tangent = box.Vertices[i].TangentU;
     }
 
     std::vector<std::uint16_t> indices;
@@ -421,6 +434,7 @@ void InitDirect3DApp::BuildGridGeometry()
         vertices[i].Pos = grid.Vertices[i].Position;
         vertices[i].Normal = grid.Vertices[i].Normal;
         vertices[i].Uv = grid.Vertices[i].TexC;
+        vertices[i].Tangent = grid.Vertices[i].TangentU;
     }
 
     std::vector<std::uint16_t> indices;
@@ -493,6 +507,7 @@ void InitDirect3DApp::BuildSphereGeometry()
         vertices[i].Pos = sphere.Vertices[i].Position;
         vertices[i].Normal = sphere.Vertices[i].Normal;
         vertices[i].Uv = sphere.Vertices[i].TexC;
+        vertices[i].Tangent = sphere.Vertices[i].TangentU;
     }
 
     std::vector<std::uint16_t> indices;
@@ -564,6 +579,7 @@ void InitDirect3DApp::BuildCylinderGeometry()
         vertices[i].Pos = cylinder.Vertices[i].Position;
         vertices[i].Normal = cylinder.Vertices[i].Normal;
         vertices[i].Uv = cylinder.Vertices[i].TexC;
+        vertices[i].Tangent = cylinder.Vertices[i].TangentU;
     }
 
     std::vector<std::uint16_t> indices;
@@ -728,6 +744,17 @@ void InitDirect3DApp::BuildTextures()
         bricksTex->UploadHeap));
     mTextures[bricksTex->Name] = std::move(bricksTex);
 
+    auto bricksNormalTex = std::make_unique<TextureInfo>();
+    bricksNormalTex->Name = "bricksNormal";
+    bricksNormalTex->Filename = L"../Textures/bricks_nmap.dds";
+    bricksNormalTex->DiffuseSrvHeapIndex = indexCount++;
+    ThrowIfFailed(CreateDDSTextureFromFile12(md3dDevice.Get(),
+        mCommandList.Get(),
+        bricksNormalTex->Filename.c_str(),
+        bricksNormalTex->Resource,
+        bricksNormalTex->UploadHeap));
+    mTextures[bricksNormalTex->Name] = std::move(bricksNormalTex);
+
     auto stoneTex = std::make_unique<TextureInfo>();
     stoneTex->Name = "stone";
     stoneTex->Filename = L"../Textures/stone.dds";
@@ -749,6 +776,17 @@ void InitDirect3DApp::BuildTextures()
         tileTex->Resource,
         tileTex->UploadHeap));
     mTextures[tileTex->Name] = std::move(tileTex);
+
+    auto tileNormalTex = std::make_unique<TextureInfo>();
+    tileNormalTex->Name = "tileNormal";
+    tileNormalTex->Filename = L"../Textures/tile_nmap.dds";
+    tileNormalTex->DiffuseSrvHeapIndex = indexCount++;
+    ThrowIfFailed(CreateDDSTextureFromFile12(md3dDevice.Get(),
+        mCommandList.Get(),
+        tileNormalTex->Filename.c_str(),
+        tileNormalTex->Resource,
+        tileNormalTex->UploadHeap));
+    mTextures[tileNormalTex->Name] = std::move(tileNormalTex);
 
     auto fenceTex = std::make_unique<TextureInfo>();
     fenceTex->Name = "wirefence";
@@ -815,7 +853,7 @@ void InitDirect3DApp::BuildMaterials()
     bricks->Name = "Bricks";
     bricks->MatCBIndex = indexCount++;
     bricks->DiffuseSrvHeapIndex = mTextures["bricks"]->DiffuseSrvHeapIndex;
-    bricks->Texture_On = 1;
+    bricks->NormalSrvHeapIndex = mTextures["bricksNormal"]->DiffuseSrvHeapIndex;
     bricks->DiffuseAlbedo = XMFLOAT4(Colors::White);
     bricks->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
     bricks->Roughness = 0.1f;
@@ -825,7 +863,6 @@ void InitDirect3DApp::BuildMaterials()
     stone->Name = "Stone";
     stone->MatCBIndex = indexCount++;
     stone->DiffuseSrvHeapIndex = mTextures["stone"]->DiffuseSrvHeapIndex;
-    stone->Texture_On = 1;
     stone->DiffuseAlbedo = XMFLOAT4(Colors::White);
     stone->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
     stone->Roughness = 0.3f;
@@ -835,7 +872,7 @@ void InitDirect3DApp::BuildMaterials()
     tile->Name = "Tile";
     tile->MatCBIndex = indexCount++;
     tile->DiffuseSrvHeapIndex = mTextures["tile"]->DiffuseSrvHeapIndex;
-    tile->Texture_On = 1;
+    tile->NormalSrvHeapIndex = mTextures["tileNormal"]->DiffuseSrvHeapIndex;
     tile->DiffuseAlbedo = XMFLOAT4(Colors::White);
     tile->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
     tile->Roughness = 0.2f;
@@ -845,7 +882,6 @@ void InitDirect3DApp::BuildMaterials()
     wireFence->Name = "WireFence";
     wireFence->MatCBIndex = indexCount++;
     wireFence->DiffuseSrvHeapIndex = mTextures["wirefence"]->DiffuseSrvHeapIndex;
-    wireFence->Texture_On = 1;
     wireFence->DiffuseAlbedo = XMFLOAT4(Colors::White);
     wireFence->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
     wireFence->Roughness = 0.25f;
@@ -855,7 +891,6 @@ void InitDirect3DApp::BuildMaterials()
     skybox->Name = "Skybox";
     skybox->MatCBIndex = indexCount++;
     skybox->DiffuseSrvHeapIndex = mTextures["skybox"]->DiffuseSrvHeapIndex;
-    skybox->Texture_On = 1;
     skybox->DiffuseAlbedo = XMFLOAT4(Colors::White);
     skybox->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
     skybox->Roughness = 1.0f;
@@ -1116,12 +1151,19 @@ void InitDirect3DApp::BuildRootSignature()
     {
         CD3DX12_DESCRIPTOR_RANGE(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1,1), //t1
     };
-    CD3DX12_ROOT_PARAMETER param[5];
+
+    CD3DX12_DESCRIPTOR_RANGE normalTable[] =
+    {
+        CD3DX12_DESCRIPTOR_RANGE(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1,2), //t2
+    };
+    CD3DX12_ROOT_PARAMETER param[6];
     param[0].InitAsConstantBufferView(0); // 0번 -> b0 : 개별 오브젝트 CBV
     param[1].InitAsConstantBufferView(1); // 1번 -> b1 : 개별 재질 CBV
     param[2].InitAsConstantBufferView(2); // 2번 -> b2 : 공용 CBV
-    param[3].InitAsDescriptorTable(_countof(skyboxTable), skyboxTable); //3번 -> t0 : 스카이박스 텍스처
-    param[4].InitAsDescriptorTable(_countof(texTable), texTable);       //4번 -> t1 : 텍스처
+    param[3].InitAsDescriptorTable(_countof(skyboxTable), skyboxTable);     //3번 -> t0 : 스카이박스 텍스처
+    param[4].InitAsDescriptorTable(_countof(texTable), texTable);           //4번 -> t1 : object 텍스처
+    param[5].InitAsDescriptorTable(_countof(normalTable), normalTable);     //5번 -> t2 : normal 텍스처
+
     D3D12_STATIC_SAMPLER_DESC samplerDesc = CD3DX12_STATIC_SAMPLER_DESC(0);     //s0 : 샘플러
     D3D12_ROOT_SIGNATURE_DESC sigDesc = CD3DX12_ROOT_SIGNATURE_DESC(_countof(param), param, 1, &samplerDesc);
     sigDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;

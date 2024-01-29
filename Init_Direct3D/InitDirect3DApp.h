@@ -26,6 +26,7 @@ struct Vertex
 	XMFLOAT3 Pos;
 	XMFLOAT3 Normal;
 	XMFLOAT2 Uv;
+	XMFLOAT3 Tangent;
 };
 
 // 개별 오브젝트 상수 버퍼
@@ -42,7 +43,8 @@ struct MatConstants
 	XMFLOAT3 FresnelR0 = { 0.01f, 0.01f, 0.01f };
 	float Roughness = 0.25f;
 	UINT Texture_On = 0;
-	XMFLOAT3 padding = { 0.0f, 0.0f, 0.0f };
+	UINT Normal_On = 0;
+	XMFLOAT2 padding = { 0.0f, 0.0f };
 };
 
 //라이팅 정보
@@ -119,7 +121,7 @@ struct MaterialInfo
 
 	int MatCBIndex = -1;
 	int DiffuseSrvHeapIndex = -1;
-	int Texture_On = 0;
+	int NormalSrvHeapIndex = -1;
 
 	XMFLOAT4 DiffuseAlbedo = { 1.0f, 1.0f, 1.0f, 1.0f };
 	XMFLOAT3 FresnelR0 = { 0.01f, 0.01f, 0.01f };
