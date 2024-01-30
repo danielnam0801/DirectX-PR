@@ -38,6 +38,7 @@ public:
     virtual LRESULT MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 protected:
+    virtual void CreateDsvDescriptorHeaps();
     virtual void OnResize();
     virtual void Update(const GameTimer& gt) = 0;
     virtual void DrawBegin(const GameTimer& gt) = 0;
@@ -62,7 +63,6 @@ protected:
     void CreateCommandFence();
     void CreateDescriptorSize();
     void CreateRtvDescriptorHeaps();
-    void CreateDsvDescriptorHeaps();
     void CreateViewPort();
 
 protected:

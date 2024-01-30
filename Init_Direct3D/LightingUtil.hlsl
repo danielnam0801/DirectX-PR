@@ -116,7 +116,7 @@ float3 ComputeSpotLight(Light L, Material mat, float3 pos, float3 normal, float3
 }
 
 float4 ComputeLighting(Light gLights[MAXLIGHTS], int lightCount, Material mat,
-                       float3 pos, float3 normal, float3 toEye)
+                       float3 pos, float3 normal, float3 toEye, float shadowFactor)
 {
     float3 result = 0.0f;
 
@@ -126,7 +126,7 @@ float4 ComputeLighting(Light gLights[MAXLIGHTS], int lightCount, Material mat,
     {
         if (gLights[i].LightType == 0)
         {
-            result += ComputeDirectionalLight(gLights[i], mat, normal, toEye);
+            result += shadowFactor * ComputeDirectionalLight(gLights[i], mat, normal, toEye);
         }
         else if (gLights[i].LightType == 1)
         {

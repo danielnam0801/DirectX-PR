@@ -45,6 +45,9 @@
     <ClInclude Include="..\Common\Camera.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="ShadowMap.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="D3DApp.cpp">
@@ -71,6 +74,9 @@
     <ClCompile Include="..\Common\Camera.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="ShadowMap.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Color.hlsl">
@@ -83,6 +89,12 @@
       <Filter>세이더 파일</Filter>
     </None>
     <None Include="Skybox.hlsl">
+      <Filter>세이더 파일</Filter>
+    </None>
+    <None Include="Shadows.hlsl">
+      <Filter>세이더 파일</Filter>
+    </None>
+    <None Include="ShadowDebug.hlsl">
       <Filter>세이더 파일</Filter>
     </None>
   </ItemGroup>
