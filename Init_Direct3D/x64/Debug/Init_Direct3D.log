@@ -1,5 +1,5 @@
 ﻿  InitDirect3DApp.cpp
-D:\DirectX\DirectX-PR\Init_Direct3D\InitDirect3DApp.cpp(1304,66): warning C4267: '=': 'size_t'에서 'UINT'(으)로 변환하면서 데이터가 손실될 수 있습니다.
-D:\DirectX\DirectX-PR\Init_Direct3D\InitDirect3DApp.cpp(1321,66): warning C4267: '=': 'size_t'에서 'UINT'(으)로 변환하면서 데이터가 손실될 수 있습니다.
-D:\DirectX\DirectX-PR\Init_Direct3D\InitDirect3DApp.cpp(1357,54): warning C4267: '=': 'size_t'에서 'UINT'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+D:\DirectX\DirectX-PR\Init_Direct3D\InitDirect3DApp.cpp(1522,66): warning C4267: '=': 'size_t'에서 'UINT'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+D:\DirectX\DirectX-PR\Init_Direct3D\InitDirect3DApp.cpp(1539,66): warning C4267: '=': 'size_t'에서 'UINT'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+D:\DirectX\DirectX-PR\Init_Direct3D\InitDirect3DApp.cpp(1591,54): warning C4267: '=': 'size_t'에서 'UINT'(으)로 변환하면서 데이터가 손실될 수 있습니다.
   Init_Direct3D.vcxproj -> D:\DirectX\DirectX-PR\x64\Debug\Init_Direct3D.exe

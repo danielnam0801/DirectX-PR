@@ -53,6 +53,7 @@ bool InitDirect3DApp::Initialize()
     //초기화 명령들
     BuildInputLayout();
     BuildGeometry();
+    BuildSkinnedModel();
     BuildTextures();
     BuildMaterials();
     BuildRenderItem();
@@ -136,6 +137,7 @@ void InitDirect3DApp::Update(const GameTimer& gt)
     UpdateMaterialCB(gt);
     UpdatePassCB(gt);
     UpdateShadowCB(gt);
+    UpdateSkinnedCB(gt);
 }
 
 void InitDirect3DApp::UpdateLight(const GameTimer& gt)
@@ -312,6 +314,20 @@ void InitDirect3DApp::UpdateShadowCB(const GameTimer& gt)
 
 }
 
+void InitDirect3DApp::UpdateSkinnedCB(const GameTimer& gt)
+{
+    mSkinnedModelInst->UpdateSkinnedAnimation(gt.DeltaTime());
+
+    SkinnedConstants skinnedConstants;
+    std::copy(
+        std::begin(mSkinnedModelInst->FinalTransforms),
+        std::end(mSkinnedModelInst->FinalTransforms),
+        &skinnedConstants.BoneTransforms[0]
+    );
+
+    memcpy(&mSkinnedMappedData[0], &skinnedConstants, sizeof(SkinnedConstants));
+}
+
 void InitDirect3DApp::DrawBegin(const GameTimer& gt)
 {
     ThrowIfFailed(mCommandListAlloc->Reset());
@@ -361,6 +377,9 @@ void InitDirect3DApp::Draw(const GameTimer& gt)
     mCommandList->SetPipelineState(mPSOs["opaque"].Get());
     DrawRenderItems(mRenderItemLayer[(int)RenderLayer::Opaque]);
 
+    mCommandList->SetPipelineState(mPSOs["skinnedOpaque"].Get());
+    DrawRenderItems(mRenderItemLayer[(int)RenderLayer::SkinnedOpaque]);
+
     mCommandList->SetPipelineState(mPSOs["alphaTested"].Get());
     DrawRenderItems(mRenderItemLayer[(int)RenderLayer::AlphaTested]);
 
@@ -396,6 +415,9 @@ void InitDirect3DApp::DrawSceneToShadowMap()
     mCommandList->SetPipelineState(mPSOs["shadow"].Get());
     DrawRenderItems(mRenderItemLayer[(int)RenderLayer::Opaque]);
 
+    mCommandList->SetPipelineState(mPSOs["skinnedShadow"].Get());
+    DrawRenderItems(mRenderItemLayer[(int)RenderLayer::SkinnedOpaque]);
+
     mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mShadowMap->Resource(),
         D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ));
 
@@ -405,7 +427,8 @@ void InitDirect3DApp::DrawRenderItems(const std::vector<RenderItem*>& ritems)
 {
     UINT objCBByteSize = (sizeof(ObjectConstants) + 255) & ~255;
     UINT matCBByteSize = (sizeof(MatConstants) + 255) & ~255;
-    
+    UINT skinnedCBByteSize = (sizeof(SkinnedConstants) + 255) & ~255;
+
     for (size_t i = 0; i < ritems.size(); ++i)
     {
         auto item = ritems[i];
@@ -440,11 +463,23 @@ void InitDirect3DApp::DrawRenderItems(const std::vector<RenderItem*>& ritems)
             mCommandList->SetGraphicsRootDescriptorTable(5, normal);
         }
 
+        if (item->SkinnedCBIndex != -1)
+        {
+            D3D12_GPU_VIRTUAL_ADDRESS skinnedCBAddress = mSkinnedCB->GetGPUVirtualAddress();
+            skinnedCBAddress += item->SkinnedCBIndex * skinnedCBByteSize;
+            mCommandList->SetGraphicsRootConstantBufferView(7, skinnedCBAddress);
+        }
+
         mCommandList->IASetVertexBuffers(0, 1, &item->Geo->VertexBufferView);
         mCommandList->IASetIndexBuffer(&item->Geo->IndexBufferView);
         mCommandList->IASetPrimitiveTopology(item->PrimitiveType);
 
-        mCommandList->DrawIndexedInstanced(item->Geo->IndexCount, 1, 0, 0, 0);
+        mCommandList->DrawIndexedInstanced(
+            item->Geo->IndexCount,
+            1,
+            item->Geo->StartIndexLocation, 
+            item->Geo->BaseVertexLocation, 
+            0);
 
     }
 
@@ -502,6 +537,16 @@ void InitDirect3DApp::BuildInputLayout()
         {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+    };
+
+    mSkinnedInputLayout = 
+    {
+       {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+       {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+       {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+       {"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+       {"WEIGHTS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 44, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+       {"BONEINDICES", 0, DXGI_FORMAT_R8G8B8A8_UINT, 0, 56, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     };
 }
 
@@ -967,6 +1012,86 @@ void InitDirect3DApp::BuildSkullGeometry()
     fin.close();
 }
 
+void InitDirect3DApp::BuildSkinnedModel()
+{
+    std::vector<M3DLoader::SkinnedVertex> vertices;
+    std::vector<std::uint16_t> indices;
+
+    M3DLoader m3dLoader;
+    m3dLoader.LoadM3d(mSkinnedModelFilename, vertices, indices, mSkinnedSubsets, mSkinnedMats, mSkinnedInfo);
+        
+    mSkinnedModelInst = std::make_unique<SkinnedModelInstance>();
+    mSkinnedModelInst->SkinnedInfo = &mSkinnedInfo;;
+    mSkinnedModelInst->FinalTransforms.resize(mSkinnedInfo.BoneCount());
+    mSkinnedModelInst->ClipName = "Take1";
+    mSkinnedModelInst->TimePos = 0.0f;
+ 
+    const UINT vbByteSize = (UINT)vertices.size() * sizeof(M3DLoader::SkinnedVertex);
+    const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+    for (UINT i = 0; i < (UINT)mSkinnedSubsets.size(); ++i)
+    {
+        auto geo = std::make_unique<GeometryInfo>();
+
+        //정점 버퍼 만들기
+        geo->VertexCount = (UINT)vertices.size();
+        const UINT vbByteSize = geo->VertexCount * sizeof(M3DLoader::SkinnedVertex);
+
+        D3D12_HEAP_PROPERTIES heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(vbByteSize);
+
+        md3dDevice->CreateCommittedResource(
+            &heapProperty,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&geo->VertexBuffer));
+
+        void* vertexDataBuffer = nullptr;
+        CD3DX12_RANGE vertexRange(0, 0);
+        geo->VertexBuffer->Map(0, &vertexRange, &vertexDataBuffer);
+        memcpy(vertexDataBuffer, vertices.data(), vbByteSize);
+        geo->VertexBuffer->Unmap(0, nullptr);
+
+        geo->VertexBufferView.BufferLocation = geo->VertexBuffer->GetGPUVirtualAddress();
+        geo->VertexBufferView.StrideInBytes = sizeof(M3DLoader::SkinnedVertex);
+        geo->VertexBufferView.SizeInBytes = vbByteSize;
+
+        //인덱스 버퍼 만들기
+        geo->IndexCount = (UINT)indices.size();
+        const UINT ibByteSize = geo->IndexCount * sizeof(std::uint16_t);
+
+        heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        desc = CD3DX12_RESOURCE_DESC::Buffer(ibByteSize);
+
+        md3dDevice->CreateCommittedResource(
+            &heapProperty,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&geo->IndexBuffer));
+
+        void* indexDataBuffer = nullptr;
+        CD3DX12_RANGE indexRange(0, 0);
+        geo->IndexBuffer->Map(0, &indexRange, &indexDataBuffer);
+        memcpy(indexDataBuffer, indices.data(), ibByteSize);
+        geo->IndexBuffer->Unmap(0, nullptr);
+
+        geo->IndexBufferView.BufferLocation = geo->IndexBuffer->GetGPUVirtualAddress();
+        geo->IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
+        geo->IndexBufferView.SizeInBytes = ibByteSize;
+
+        geo->IndexCount = (UINT)mSkinnedSubsets[i].FaceCount * 3;
+        geo->StartIndexLocation = mSkinnedSubsets[i].FaceStart * 3;
+        geo->BaseVertexLocation = 0;
+        geo->Name = "sm_" + std::to_string(i);
+
+        mGeoMetries[geo->Name] = std::move(geo);
+    }
+}
+
 void InitDirect3DApp::BuildTextures()
 {
     UINT indexCount = 0;
@@ -1047,6 +1172,46 @@ void InitDirect3DApp::BuildTextures()
         skyboxTex->Resource,
         skyboxTex->UploadHeap));
     mTextures[skyboxTex->Name] = std::move(skyboxTex);
+
+    // SKinned Model 텍스처 로드
+    for (UINT i = 0; i < mSkinnedMats.size(); ++i)
+    {
+        std::string diffuseName = mSkinnedMats[i].DiffuseMapName;
+        std::string normalName = mSkinnedMats[i].NormalMapName;
+
+        std::wstring diffuseFilename = L"../Textures/" + AnsiToWString(diffuseName);
+        std::wstring normalFilename = L"../Textures/" + AnsiToWString(normalName);
+
+        
+        if (mTextures.find(diffuseName) == mTextures.end())
+        {
+            auto texDiff = std::make_unique<TextureInfo>();
+            texDiff->Name = diffuseName;
+            texDiff->Filename = diffuseFilename;
+            texDiff->DiffuseSrvHeapIndex = indexCount++;
+            ThrowIfFailed(CreateDDSTextureFromFile12(md3dDevice.Get(),
+                mCommandList.Get(),
+                texDiff->Filename.c_str(),
+                texDiff->Resource,
+                texDiff->UploadHeap));
+            mTextures[texDiff->Name] = std::move(texDiff);
+        }
+
+        //노말 텍스처 중복 방지
+        if (mTextures.find(normalName) == mTextures.end())
+        {
+            auto texDiff = std::make_unique<TextureInfo>();
+            texDiff->Name = normalName;
+            texDiff->Filename = normalFilename;
+            texDiff->DiffuseSrvHeapIndex = indexCount++;
+            ThrowIfFailed(CreateDDSTextureFromFile12(md3dDevice.Get(),
+                mCommandList.Get(),
+                texDiff->Filename.c_str(),
+                texDiff->Resource,
+                texDiff->UploadHeap));
+            mTextures[texDiff->Name] = std::move(texDiff);
+        }
+    }
 }
 
 void InitDirect3DApp::BuildMaterials()
@@ -1141,6 +1306,23 @@ void InitDirect3DApp::BuildMaterials()
     mirror->FresnelR0 = XMFLOAT3(0.98f, 0.97f, 0.95f);
     mirror->Roughness = 0.1f;
     mMaterials[mirror->Name] = std::move(mirror);
+    
+    // Skinned Model Materials
+    for (UINT i = 0; i < mSkinnedMats.size(); ++i)
+    {
+        std::string diffuseName = mSkinnedMats[i].DiffuseMapName;
+        std::string normalName = mSkinnedMats[i].NormalMapName;
+
+        auto mat = std::make_unique<MaterialInfo>();
+        mat->Name = mSkinnedMats[i].Name;
+        mat->MatCBIndex = indexCount++;
+        mat->DiffuseSrvHeapIndex = mTextures[diffuseName]->DiffuseSrvHeapIndex;
+        mat->NormalSrvHeapIndex = mTextures[normalName]->DiffuseSrvHeapIndex;
+        mat->DiffuseAlbedo = mSkinnedMats[i].DiffuseAlbedo;
+        mat->FresnelR0 = mSkinnedMats[i].FresnelR0;
+        mat->Roughness = mSkinnedMats[i].Roughness;
+        mMaterials[mat->Name] = std::move(mat);
+    }
 }
 
 void InitDirect3DApp::BuildRenderItem()
@@ -1264,6 +1446,32 @@ void InitDirect3DApp::BuildRenderItem()
         mRenderItems.push_back(std::move(rightsphereItem));
     }
 
+    // Skinned Model Object
+    for (UINT i = 0; i < mSkinnedMats.size(); ++i)
+    {
+        std::string submeshName = "sm_" + std::to_string(i);
+        auto ritem = std::make_unique<RenderItem>();
+
+        XMMATRIX modelScale = XMMatrixScaling(0.05f, 0.05f, -0.05f);
+        XMMATRIX modelRot = XMMatrixRotationY(MathHelper::Pi);
+        XMMATRIX modelOffset = XMMatrixTranslation(0.0f, 0.0f, -5.0f);
+        XMStoreFloat4x4(&ritem->World, modelScale * modelRot * modelOffset);
+        ritem->TexTransform = MathHelper::Identity4x4();
+        ritem->ObjCBIndex = objCBIndex++;
+        ritem->Mat = mMaterials[mSkinnedMats[i].Name].get();
+        ritem->Geo = mGeoMetries[submeshName].get();
+        ritem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+        ritem->IndexCount = ritem->Geo->IndexCount;
+
+        ritem->SkinnedCBIndex = 0;
+        ritem->SkinnedModelInst = mSkinnedModelInst.get();
+
+        mRenderItemLayer[(int)RenderLayer::SkinnedOpaque].push_back(ritem.get());
+        mRenderItems.push_back(std::move(ritem));
+
+
+    }
+
 
 }
 
@@ -1282,7 +1490,16 @@ void InitDirect3DApp::BuildShader()
         NULL, NULL
     };
 
+    const D3D_SHADER_MACRO skinnedDefines[] =
+    {
+        "FOG", "1",
+        "ALPHA_TEST", "1",
+        "SKINNED", "1",
+        NULL, NULL
+    };
+
     mShaders["standardVS"] = d3dUtil::CompileShader(L"Color.hlsl", nullptr, "VS", "vs_5_0");
+    mShaders["skinnedVS"] = d3dUtil::CompileShader(L"Color.hlsl", skinnedDefines, "VS", "vs_5_0");
     mShaders["opaquePS"] = d3dUtil::CompileShader(L"Color.hlsl", defines, "PS", "ps_5_0");
     mShaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Color.hlsl", alphaTestDefines, "PS", "ps_5_0");
     
@@ -1290,6 +1507,7 @@ void InitDirect3DApp::BuildShader()
     mShaders["skyPS"] = d3dUtil::CompileShader(L"Skybox.hlsl", nullptr, "PS", "ps_5_1");
     
     mShaders["shadowVS"] = d3dUtil::CompileShader(L"Shadows.hlsl", nullptr, "VS", "vs_5_0");
+    mShaders["skinnedShadowVS"] = d3dUtil::CompileShader(L"Shadows.hlsl", skinnedDefines, "VS", "vs_5_0");
     mShaders["shadowPS"] = d3dUtil::CompileShader(L"Shadows.hlsl", nullptr, "PS", "ps_5_0");
 
     mShaders["debugVS"] = d3dUtil::CompileShader(L"ShadowDebug.hlsl", nullptr, "VS", "vs_5_0");
@@ -1348,6 +1566,22 @@ void InitDirect3DApp::BuildConstantBuffer()
         IID_PPV_ARGS(&mPassCB));
 
     mPassCB->Map(0, nullptr, reinterpret_cast<void**>(&mPassMappedData));
+    
+    // 스키닝 오브젝트 상수 버퍼
+    size = sizeof(SkinnedConstants);
+    mSkinnedByteSize = ((size + 255) & ~255);
+    heapProperty = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    desc = CD3DX12_RESOURCE_DESC::Buffer(mSkinnedByteSize);
+
+    md3dDevice->CreateCommittedResource(
+        &heapProperty,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&mSkinnedCB));
+
+    mSkinnedCB->Map(0, nullptr, reinterpret_cast<void**>(&mSkinnedMappedData));
 }
 
 void InitDirect3DApp::BuildDescriptorHeaps()
@@ -1429,7 +1663,7 @@ void InitDirect3DApp::BuildRootSignature()
     {
         CD3DX12_DESCRIPTOR_RANGE(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1,3), //t3
     };
-    CD3DX12_ROOT_PARAMETER param[7];
+    CD3DX12_ROOT_PARAMETER param[8];
     param[0].InitAsConstantBufferView(0); // 0번 -> b0 : 개별 오브젝트 CBV
     param[1].InitAsConstantBufferView(1); // 1번 -> b1 : 개별 재질 CBV
     param[2].InitAsConstantBufferView(2); // 2번 -> b2 : 공용 CBV
@@ -1437,6 +1671,7 @@ void InitDirect3DApp::BuildRootSignature()
     param[4].InitAsDescriptorTable(_countof(texTable), texTable);           //4번 -> t1 : object 텍스처
     param[5].InitAsDescriptorTable(_countof(normalTable), normalTable);     //5번 -> t2 : normal 텍스처
     param[6].InitAsDescriptorTable(_countof(shadowTable), shadowTable);     //6번 -> t3 : 그림자맵 텍스처
+    param[7].InitAsConstantBufferView(3);     //3번 -> b3 :  스키닝 애니메이션 CBV
 
 
     //s0 : 기본 텍스처 샘플러
@@ -1585,4 +1820,26 @@ void InitDirect3DApp::BuildPSO()
     };
 
     ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&debugPsoDesc, IID_PPV_ARGS(&mPSOs["debug"])));
+
+    //skinned model PSO
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC skinnedPsoDesc = psoDesc;
+    skinnedPsoDesc.InputLayout = { mSkinnedInputLayout.data(), (UINT)mSkinnedInputLayout.size() };
+    skinnedPsoDesc.VS =
+    {
+        reinterpret_cast<BYTE*>(mShaders["skinnedVS"]->GetBufferPointer()),
+        mShaders["skinnedVS"]->GetBufferSize()
+    };
+    ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&skinnedPsoDesc, IID_PPV_ARGS(&mPSOs["skinnedOpaque"])));
+    
+
+    //skinned shadow PSO
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC skinnedShadowPsoDesc = shadowPsoDesc;
+    skinnedShadowPsoDesc.InputLayout = { mSkinnedInputLayout.data(), (UINT)mSkinnedInputLayout.size() };
+    skinnedShadowPsoDesc.VS =
+    {
+        reinterpret_cast<BYTE*>(mShaders["skinnedShadowVS"]->GetBufferPointer()),
+        mShaders["skinnedShadowVS"]->GetBufferSize()
+    };
+ 
+    ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&skinnedShadowPsoDesc, IID_PPV_ARGS(&mPSOs["skinnedShadow"])));
 }

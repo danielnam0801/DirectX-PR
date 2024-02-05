@@ -59,6 +59,11 @@ cbuffer cbPass : register(b2)
 	float2 fogpadding;
 };
 
+cbuffer cbSkinned : register(b3)
+{
+	float4x4 gBoneTransforms[96];
+};
+
 TextureCube gCubeMap : register(t0);
 
 Texture2D gTexture_0 : register(t1);
